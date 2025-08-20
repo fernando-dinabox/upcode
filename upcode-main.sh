@@ -176,110 +176,156 @@ list_bookmarks() {
 }
 
 #===========================================
-# NAVEGAÇÃO DE ARQUIVOS
+# NAVEGAÇÃO DE ARQUIVOS - VERSÃO CORRIGIDA
 #===========================================
 
-# Navegador de arquivos melhorado
+# Navegador de arquivos melhorado e mais rápido
 file_browser() {
+    # Determinar diretório inicial
     local current_dir="${1:-$HOME}"
     
-    # Se o diretório não existir, começar do HOME
-    if [[ ! -d "$current_dir" ]]; then
+    # Se for Windows/WSL, começar em /mnt/c/Users se possível
+    if [[ -d "/mnt/c/Users" && "$current_dir" == "$HOME" ]]; then
+        current_dir="/mnt/c/Users"
+    elif [[ ! -d "$current_dir" ]]; then
         current_dir="$HOME"
     fi
     
     while true; do
         clear_screen
         echo "📁 Navegador: $(basename "$current_dir")"
-        echo "Caminho: $current_dir"
+        echo "📂 Caminho: $current_dir"
         echo "─────────────────────────────────"
         
         local items=()
         
         # Opção para voltar (se não estiver na raiz)
-        if [[ "$current_dir" != "/" ]]; then
-            items+=(".. 🔙 Voltar")
+        if [[ "$current_dir" != "/" && "$current_dir" != "/mnt/c" ]]; then
+            items+=(".. [🔙 Voltar]")
         fi
         
         # Adicionar favoritos se existirem
         if list_bookmarks > /dev/null 2>&1; then
-            items+=("--- ⭐ FAVORITOS ---")
+            items+=("")
+            items+=("--- [⭐ FAVORITOS] ---")
             while IFS= read -r bookmark; do
-                items+=("BOOKMARK $bookmark")
+                local bookmark_name=$(echo "$bookmark" | cut -d'|' -f1 | sed 's/📁 //')
+                local bookmark_path=$(echo "$bookmark" | cut -d'|' -f2)
+                items+=("BOOKMARK|$bookmark_path|⭐ $bookmark_name")
             done < <(list_bookmarks)
-            items+=("--- 📂 PASTAS E ARQUIVOS ---")
+            items+=("")
+            items+=("--- [📂 CONTEÚDO ATUAL] ---")
         fi
         
-        # Listar diretórios primeiro
-        while IFS= read -r -d '' dir; do
-            [[ -d "$dir" ]] || continue
-            local dirname=$(basename "$dir")
-            items+=("DIR 📂 $dirname/")
-        done < <(find "$current_dir" -maxdepth 1 -type d ! -path "$current_dir" -print0 2>/dev/null | sort -z)
+        # Listar diretórios e arquivos de forma mais eficiente
+        local dir_count=0
+        local file_count=0
         
-        # Listar arquivos
-        while IFS= read -r -d '' file; do
-            [[ -f "$file" ]] || continue
-            local filename=$(basename "$file")
-            local size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
+        # Usar ls ao invés de find para ser mais rápido
+        if [[ -r "$current_dir" ]]; then
+            # Listar diretórios primeiro
+            while IFS= read -r item; do
+                [[ -z "$item" ]] && continue
+                local full_path="$current_dir/$item"
+                if [[ -d "$full_path" ]]; then
+                    items+=("DIR|$full_path|📂 $item/")
+                    ((dir_count++))
+                fi
+            done < <(ls -1 "$current_dir" 2>/dev/null | head -50)  # Limitar a 50 itens para velocidade
             
-            # Verificar se está no histórico
-            local history_mark=""
-            if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
-                history_mark="⭐ "
-            fi
-            
-            items+=("FILE 📄 $history_mark$filename ($size)")
-        done < <(find "$current_dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+            # Listar arquivos
+            while IFS= read -r item; do
+                [[ -z "$item" ]] && continue
+                local full_path="$current_dir/$item"
+                if [[ -f "$full_path" ]]; then
+                    local size=$(du -sh "$full_path" 2>/dev/null | cut -f1 || echo "?")
+                    
+                    # Verificar se está no histórico
+                    local history_mark=""
+                    if [[ -f "$HISTORY_FILE" ]] && grep -q "^$full_path$" "$HISTORY_FILE" 2>/dev/null; then
+                        history_mark="⭐ "
+                    fi
+                    
+                    items+=("FILE|$full_path|📄 $history_mark$item ($size)")
+                    ((file_count++))
+                fi
+            done < <(ls -1 "$current_dir" 2>/dev/null | head -30)  # Limitar a 30 arquivos
+        else
+            items+=("❌ Sem permissão para ler este diretório")
+        fi
         
         # Adicionar opções de controle
-        items+=("---")
-        items+=("ADD_BOOKMARK ⭐ Adicionar pasta aos favoritos")
-        items+=("HISTORY 📝 Ver histórico de uploads")
-        items+=("BACK 🔙 Voltar ao menu principal")
+        items+=("")
+        items+=("--- [🛠️ OPÇÕES] ---")
+        items+=("ADD_BOOKMARK||⭐ Adicionar aos favoritos")
+        items+=("HISTORY||📝 Ver histórico ($([[ -f "$HISTORY_FILE" ]] && wc -l < "$HISTORY_FILE" || echo 0) arquivos)")
+        items+=("BACK||🔙 Voltar ao menu principal")
+        
+        # Mostrar contador
+        echo "📊 Encontrados: $dir_count pastas, $file_count arquivos"
+        echo
         
         # Mostrar seletor
         local choice=$(printf '%s\n' "${items[@]}" | \
+            sed 's/^[^|]*|[^|]*|//' | \
             fzf --prompt="$(basename "$current_dir") > " \
-                --header="Enter=Navegar/Selecionar | Esc=Voltar" \
+                --header="Enter=Navegar/Selecionar | Esc=Voltar | /=Buscar" \
                 --preview-window=hidden)
         
         # Sair se cancelado
         [[ -z "$choice" ]] && return
         
+        # Encontrar a linha completa selecionada
+        local selected_line=""
+        for item in "${items[@]}"; do
+            if [[ "$item" == *"|$choice" ]]; then
+                selected_line="$item"
+                break
+            fi
+        done
+        
         # Processar escolha
-        case "$choice" in
-            ".. 🔙 Voltar")
+        local action=$(echo "$selected_line" | cut -d'|' -f1)
+        local path=$(echo "$selected_line" | cut -d'|' -f2)
+        
+        case "$action" in
+            "..")
                 current_dir=$(dirname "$current_dir")
                 ;;
-            "ADD_BOOKMARK"*)
-                read -p "📝 Nome para este favorito: " bookmark_name </dev/tty
-                [[ -n "$bookmark_name" ]] && add_bookmark "$current_dir" "$bookmark_name"
+            "BOOKMARK")
+                current_dir="$path"
                 ;;
-            "HISTORY"*)
+            "DIR")
+                current_dir="$path"
+                ;;
+            "FILE")
+                show_file_options "$path"
+                ;;
+            "ADD_BOOKMARK")
+                echo
+                read -p "📝 Nome para este favorito [$(basename "$current_dir")]: " bookmark_name </dev/tty
+                [[ -z "$bookmark_name" ]] && bookmark_name=$(basename "$current_dir")
+                add_bookmark "$current_dir" "$bookmark_name"
+                ;;
+            "HISTORY")
                 show_upload_history
                 ;;
-            "BACK"*)
+            "BACK")
                 return
                 ;;
-            "BOOKMARK"*)
-                local bookmark_path=$(echo "$choice" | cut -d'|' -f2)
-                current_dir="$bookmark_path"
-                ;;
-            "DIR"*)
-                local folder_name=$(echo "$choice" | sed 's/^DIR 📂 //' | sed 's/\/$//')
-                current_dir="$current_dir/$folder_name"
-                ;;
-            "FILE"*)
-                local file_info=$(echo "$choice" | sed 's/^FILE 📄 //' | sed 's/^⭐ //')
-                local filename=$(echo "$file_info" | sed 's/ ([^)]*)$//')
-                local filepath="$current_dir/$filename"
-                
-                # Mostrar opções para o arquivo
-                show_file_options "$filepath"
-                ;;
-            "---"* | *"FAVORITOS"* | *"PASTAS E ARQUIVOS"*)
+            "")
+                # Linhas vazias ou separadores - ignorar
                 continue
+                ;;
+            *)
+                # Se não conseguiu processar, talvez seja uma seleção direta
+                if [[ "$choice" == *"[🔙 Voltar]" ]]; then
+                    current_dir=$(dirname "$current_dir")
+                elif [[ "$choice" == *"📂"* && "$choice" == *"/" ]]; then
+                    # É um diretório
+                    local folder_name=$(echo "$choice" | sed 's/📂 //' | sed 's/\/$//')
+                    current_dir="$current_dir/$folder_name"
+                fi
                 ;;
         esac
     done
@@ -289,26 +335,35 @@ file_browser() {
 show_file_options() {
     local file="$1"
     
+    clear_screen
+    echo "📄 Arquivo: $(basename "$file")"
+    echo "📁 Local: $(dirname "$file")"
+    echo "─────────────────────────────────"
+    
     local options=(
-        "upload 📤 Upload deste arquivo"
-        "info ℹ️ Informações do arquivo"
-        "back 🔙 Voltar"
+        "upload|📤 Upload deste arquivo"
+        "info|ℹ️ Informações do arquivo"
+        "back|🔙 Voltar"
     )
     
     local choice=$(printf '%s\n' "${options[@]}" | \
-        sed 's/^[^ ]* //' | \
-        fzf --prompt="Arquivo: $(basename "$file") > " \
-            --header="Escolha uma ação" \
+        sed 's/^[^|]*|//' | \
+        fzf --prompt="Ações > " \
+            --header="Escolha uma ação para o arquivo" \
             --height=10)
     
-    case "$choice" in
-        "📤 Upload deste arquivo")
-            upload_single_file "$file"
-            ;;
-        "ℹ️ Informações do arquivo")
-            show_file_info "$file"
-            ;;
-    esac
+    # Encontrar a ação correspondente
+    for option in "${options[@]}"; do
+        if [[ "$option" == *"|$choice" ]]; then
+            local action=$(echo "$option" | cut -d'|' -f1)
+            case "$action" in
+                "upload") upload_single_file "$file" ;;
+                "info") show_file_info "$file" ;;
+                "back") return ;;
+            esac
+            break
+        fi
+    done
 }
 
 # Mostrar informações do arquivo
@@ -320,9 +375,10 @@ show_file_info() {
     echo "─────────────────────────"
     echo "📄 Nome: $(basename "$file")"
     echo "📁 Pasta: $(dirname "$file")"
-    echo "💾 Tamanho: $(du -sh "$file" | cut -f1)"
-    echo "📅 Modificado: $(stat -c '%y' "$file" 2>/dev/null | cut -d. -f1)"
+    echo "💾 Tamanho: $(du -sh "$file" 2>/dev/null | cut -f1 || echo "N/A")"
+    echo "📅 Modificado: $(stat -c '%y' "$file" 2>/dev/null | cut -d. -f1 || echo "N/A")"
     echo "🔗 Caminho completo: $file"
+    echo "📝 Tipo: $(file -b "$file" 2>/dev/null || echo "Desconhecido")"
     
     # Verificar se está no histórico
     if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
@@ -331,6 +387,7 @@ show_file_info() {
         echo "📝 Status: Nunca foi enviado"
     fi
     
+    echo
     pause
 }
 
@@ -348,8 +405,9 @@ show_upload_history() {
     local history_files=()
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then
-            local size=$(du -sh "$file" 2>/dev/null | cut -f1)
-            history_files+=("📄 $(basename "$file") ($size)|$file")
+            local size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
+            local basename_file=$(basename "$file")
+            history_files+=("FILE|$file|📄 $basename_file ($size)")
         fi
     done < <(tac "$HISTORY_FILE")  # Inverter ordem (mais recentes primeiro)
     
@@ -363,13 +421,19 @@ show_upload_history() {
     fi
     
     local choice=$(printf '%s\n' "${history_files[@]}" | \
+        sed 's/^[^|]*|[^|]*|//' | \
         fzf --prompt="Histórico > " \
-            --header="Selecione um arquivo do histórico" \
-            --delimiter='|' --with-nth=1)
+            --header="Selecione um arquivo do histórico")
     
     if [[ -n "$choice" ]]; then
-        local selected_file=$(echo "$choice" | cut -d'|' -f2)
-        upload_single_file "$selected_file"
+        # Encontrar o arquivo correspondente
+        for item in "${history_files[@]}"; do
+            if [[ "$item" == *"|$choice" ]]; then
+                local selected_file=$(echo "$item" | cut -d'|' -f2)
+                upload_single_file "$selected_file"
+                break
+            fi
+        done
     fi
 }
 
@@ -392,7 +456,7 @@ upload_single_file() {
     echo "📤 Upload de Arquivo"
     echo "──────────────────"
     echo "📄 Arquivo: $(basename "$file")"
-    echo "💾 Tamanho: $(du -sh "$file" | cut -f1)"
+    echo "💾 Tamanho: $(du -sh "$file" 2>/dev/null | cut -f1 || echo "N/A")"
     echo
     
     # Selecionar pasta de destino
@@ -414,6 +478,7 @@ upload_single_file() {
     
     # Se escolheu "Outros", pedir nome personalizado
     if [[ "$folder" == "Outros" ]]; then
+        echo
         read -p "📁 Nome da pasta: " folder </dev/tty
         [[ -z "$folder" ]] && return
     fi
@@ -422,7 +487,7 @@ upload_single_file() {
     echo "📋 Resumo:"
     echo "  📄 Arquivo: $(basename "$file")"
     echo "  📁 Destino: $folder"
-    echo "  💾 Tamanho: $(du -sh "$file" | cut -f1)"
+    echo "  💾 Tamanho: $(du -sh "$file" 2>/dev/null | cut -f1 || echo "N/A")"
     
     # Verificar se já foi enviado
     if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
@@ -432,9 +497,10 @@ upload_single_file() {
     echo
     
     if confirm "Confirmar upload?"; then
-        perform_upload "$file" "$folder"
-        # Adicionar ao histórico após sucesso
-        add_to_history "$file"
+        if perform_upload "$file" "$folder"; then
+            # Adicionar ao histórico após sucesso
+            add_to_history "$file"
+        fi
     else
         echo "❌ Upload cancelado"
         sleep 1
@@ -444,6 +510,7 @@ upload_single_file() {
 # Upload rápido (do histórico)
 quick_upload() {
     if [[ ! -f "$HISTORY_FILE" ]] || [[ ! -s "$HISTORY_FILE" ]]; then
+        clear_screen
         echo "📝 Nenhum histórico encontrado"
         echo "Use o navegador de arquivos primeiro"
         pause
@@ -454,8 +521,12 @@ quick_upload() {
     local last_file=$(tail -n 1 "$HISTORY_FILE")
     
     if [[ -f "$last_file" ]]; then
-        echo "⚡ Upload rápido do último arquivo:"
+        clear_screen
+        echo "⚡ Upload Rápido"
+        echo "──────────────"
+        echo "Último arquivo enviado:"
         echo "📄 $(basename "$last_file")"
+        echo "💾 $(du -sh "$last_file" 2>/dev/null | cut -f1 || echo "N/A")"
         echo
         
         if confirm "Enviar novamente este arquivo?"; then
@@ -532,31 +603,39 @@ main_menu() {
         
         # Criar opções do menu
         local menu_options=(
-            "1|📁 Navegador de Arquivos"
-            "2|⚡ Upload Rápido (último arquivo)"
-            "3|📝 Histórico ($history_count arquivos)"
-            "4|⭐ Gerenciar Favoritos"
-            "5|🔄 Renovar Token"
-            "6|❌ Sair"
+            "browser|📁 Navegador de Arquivos"
+            "quick|⚡ Upload Rápido (último arquivo)"
+            "history|📝 Histórico ($history_count arquivos)"
+            "favorites|⭐ Gerenciar Favoritos"
+            "token|🔄 Renovar Token"
+            "exit|❌ Sair"
         )
         
         # Mostrar menu
         local choice=$(printf '%s\n' "${menu_options[@]}" | \
-            sed 's/^[0-9]|//' | \
+            sed 's/^[^|]*|//' | \
             fzf --prompt="UPCODE > " \
                 --header="Sistema de Upload de Arquivos" \
                 --preview-window=hidden)
         
-        # Processar escolha
-        case "$choice" in
-            "📁 Navegador de Arquivos") file_browser ;;
-            "⚡ Upload Rápido"*) quick_upload ;;
-            "📝 Histórico"*) show_upload_history ;;
-            "⭐ Gerenciar Favoritos") manage_bookmarks ;;
-            "🔄 Renovar Token") renew_token ;;
-            "❌ Sair") clear; exit 0 ;;
-            "") clear; exit 0 ;;
-        esac
+        # Encontrar a ação correspondente
+        for option in "${menu_options[@]}"; do
+            if [[ "$option" == *"|$choice" ]]; then
+                local action=$(echo "$option" | cut -d'|' -f1)
+                case "$action" in
+                    "browser") file_browser ;;
+                    "quick") quick_upload ;;
+                    "history") show_upload_history ;;
+                    "favorites") manage_bookmarks ;;
+                    "token") renew_token ;;
+                    "exit") clear; exit 0 ;;
+                esac
+                break
+            fi
+        done
+        
+        # Se não encontrou correspondência e choice está vazio, sair
+        [[ -z "$choice" ]] && { clear; exit 0; }
     done
 }
 
@@ -576,22 +655,28 @@ manage_bookmarks() {
     local bookmarks=()
     while IFS='|' read -r path name; do
         if [[ -d "$path" ]]; then
-            bookmarks+=("📁 $name|$path")
+            bookmarks+=("BOOKMARK|$path|📁 $name")
         fi
     done < "$BOOKMARKS_FILE"
     
-    bookmarks+=("🔙 Voltar")
+    bookmarks+=("BACK||🔙 Voltar")
     
     local choice=$(printf '%s\n' "${bookmarks[@]}" | \
+        sed 's/^[^|]*|[^|]*|//' | \
         fzf --prompt="Favoritos > " \
-            --header="Selecione um favorito ou volte" \
-            --delimiter='|' --with-nth=1)
+            --header="Selecione um favorito ou volte")
     
     if [[ "$choice" == "🔙 Voltar" ]]; then
         return
     elif [[ -n "$choice" ]]; then
-        local selected_path=$(echo "$choice" | cut -d'|' -f2)
-        file_browser "$selected_path"
+        # Encontrar o caminho correspondente
+        for item in "${bookmarks[@]}"; do
+            if [[ "$item" == *"|$choice" ]]; then
+                local selected_path=$(echo "$item" | cut -d'|' -f2)
+                file_browser "$selected_path"
+                break
+            fi
+        done
     fi
 }
 
