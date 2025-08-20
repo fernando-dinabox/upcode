@@ -8,6 +8,8 @@
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
 TOKEN_FILE="$HOME/.upcode_token"
+HISTORY_FILE="$HOME/.upcode_history"
+BOOKMARKS_FILE="$HOME/.upcode_bookmarks"
 
 # Array para arquivos selecionados
 declare -a selected_files=()
@@ -115,114 +117,104 @@ renew_token() {
 }
 
 #===========================================
-# SELEÇÃO DE ARQUIVOS
+# HISTÓRICO E FAVORITOS
 #===========================================
 
-# Alternar seleção de arquivo
-toggle_selection() {
+# Adicionar arquivo ao histórico
+add_to_history() {
     local file="$1"
     
-    # Verificar se já está selecionado
-    for i in "${!selected_files[@]}"; do
-        if [[ "${selected_files[$i]}" == "$file" ]]; then
-            unset "selected_files[$i]"
-            selected_files=("${selected_files[@]}")  # Reindexar
-            echo "➖ Removido: $(basename "$file")"
-            sleep 0.5
-            return
-        fi
-    done
+    # Criar arquivo de histórico se não existir
+    touch "$HISTORY_FILE"
     
-    # Adicionar à seleção
-    selected_files+=("$file")
-    echo "➕ Adicionado: $(basename "$file")"
-    sleep 0.5
+    # Remover entrada anterior se existir
+    grep -v "^$file$" "$HISTORY_FILE" > "$HISTORY_FILE.tmp" 2>/dev/null || true
+    mv "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null || true
+    
+    # Adicionar no topo
+    echo "$file" >> "$HISTORY_FILE"
+    
+    # Manter apenas os últimos 20
+    tail -n 20 "$HISTORY_FILE" > "$HISTORY_FILE.tmp"
+    mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 }
 
-# Limpar seleções
-clear_selections() {
-    if [[ ${#selected_files[@]} -eq 0 ]]; then
-        echo "ℹ️ Nenhuma seleção para limpar"
+# Adicionar pasta aos favoritos
+add_bookmark() {
+    local dir="$1"
+    local name="$2"
+    
+    touch "$BOOKMARKS_FILE"
+    
+    # Verificar se já existe
+    if ! grep -q "^$dir|" "$BOOKMARKS_FILE" 2>/dev/null; then
+        echo "$dir|$name" >> "$BOOKMARKS_FILE"
+        echo "✅ Pasta adicionada aos favoritos: $name"
     else
-        selected_files=()
-        echo "✅ ${#selected_files[@]} seleções limpas!"
+        echo "ℹ️ Pasta já está nos favoritos"
     fi
     sleep 1
 }
 
-# Mostrar arquivos selecionados
-show_selected() {
-    clear_screen
-    
-    if [[ ${#selected_files[@]} -eq 0 ]]; then
-        echo "📋 Nenhum arquivo selecionado"
-        pause
-        return
+# Listar favoritos
+list_bookmarks() {
+    if [[ ! -f "$BOOKMARKS_FILE" ]] || [[ ! -s "$BOOKMARKS_FILE" ]]; then
+        return 1
     fi
     
-    echo "📋 Arquivos Selecionados (${#selected_files[@]})"
-    echo "─────────────────────────────"
+    local bookmarks=()
+    while IFS='|' read -r path name; do
+        [[ -d "$path" ]] && bookmarks+=("📁 $name|$path")
+    done < "$BOOKMARKS_FILE"
     
-    # Criar lista para fzf
-    local file_list=()
-    for file in "${selected_files[@]}"; do
-        local size=$(du -sh "$file" 2>/dev/null | cut -f1)
-        local basename_file=$(basename "$file")
-        file_list+=("$basename_file ($size)")
-    done
-    
-    # Mostrar no fzf para remoção opcional
-    local to_remove=$(printf '%s\n' "${file_list[@]}" | \
-        fzf --multi --prompt="Remover > " \
-            --header="Selecione arquivos para remover (Tab para múltiplos)")
-    
-    if [[ -n "$to_remove" ]]; then
-        while IFS= read -r item; do
-            local filename=$(echo "$item" | sed 's/ ([^)]*)$//')
-            for i in "${!selected_files[@]}"; do
-                if [[ "$(basename "${selected_files[$i]}")" == "$filename" ]]; then
-                    echo "➖ Removendo: $filename"
-                    unset "selected_files[$i]"
-                fi
-            done
-        done <<< "$to_remove"
-        
-        selected_files=("${selected_files[@]}")  # Reindexar
-        echo "✅ Arquivos removidos da seleção"
-        sleep 1
+    if [[ ${#bookmarks[@]} -eq 0 ]]; then
+        return 1
     fi
+    
+    printf '%s\n' "${bookmarks[@]}"
+    return 0
 }
 
 #===========================================
 # NAVEGAÇÃO DE ARQUIVOS
 #===========================================
 
-# Navegador de arquivos
+# Navegador de arquivos melhorado
 file_browser() {
-    local current_dir="/mnt/c/Users/Dinabox/Desktop/PROJECTS"
+    local current_dir="${1:-$HOME}"
     
-    # Verificar se diretório existe
+    # Se o diretório não existir, começar do HOME
     if [[ ! -d "$current_dir" ]]; then
-        current_dir="/mnt/c/Users/Dinabox/Desktop"
+        current_dir="$HOME"
     fi
     
     while true; do
         clear_screen
         echo "📁 Navegador: $(basename "$current_dir")"
+        echo "Caminho: $current_dir"
         echo "─────────────────────────────────"
         
         local items=()
         
         # Opção para voltar (se não estiver na raiz)
-        if [[ "$current_dir" != "/mnt/c" ]]; then
-            items+=(".. [Voltar]")
+        if [[ "$current_dir" != "/" ]]; then
+            items+=(".. 🔙 Voltar")
+        fi
+        
+        # Adicionar favoritos se existirem
+        if list_bookmarks > /dev/null 2>&1; then
+            items+=("--- ⭐ FAVORITOS ---")
+            while IFS= read -r bookmark; do
+                items+=("BOOKMARK $bookmark")
+            done < <(list_bookmarks)
+            items+=("--- 📂 PASTAS E ARQUIVOS ---")
         fi
         
         # Listar diretórios primeiro
         while IFS= read -r -d '' dir; do
             [[ -d "$dir" ]] || continue
             local dirname=$(basename "$dir")
-            items+=("DIR $dirname/")
+            items+=("DIR 📂 $dirname/")
         done < <(find "$current_dir" -maxdepth 1 -type d ! -path "$current_dir" -print0 2>/dev/null | sort -z)
         
         # Listar arquivos
@@ -230,20 +222,21 @@ file_browser() {
             [[ -f "$file" ]] || continue
             local filename=$(basename "$file")
             local size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
-            local mark=" "
             
-            # Verificar se está selecionado
-            if [[ " ${selected_files[@]} " =~ " $file " ]]; then
-                mark="✓"
+            # Verificar se está no histórico
+            local history_mark=""
+            if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
+                history_mark="⭐ "
             fi
             
-            items+=("FILE $mark $filename ($size)")
+            items+=("FILE 📄 $history_mark$filename ($size)")
         done < <(find "$current_dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
         
         # Adicionar opções de controle
         items+=("---")
-        items+=("UPLOAD Upload Selecionados (${#selected_files[@]})")
-        items+=("BACK Voltar ao Menu Principal")
+        items+=("ADD_BOOKMARK ⭐ Adicionar pasta aos favoritos")
+        items+=("HISTORY 📝 Ver histórico de uploads")
+        items+=("BACK 🔙 Voltar ao menu principal")
         
         # Mostrar seletor
         local choice=$(printf '%s\n' "${items[@]}" | \
@@ -256,56 +249,151 @@ file_browser() {
         
         # Processar escolha
         case "$choice" in
-            ".. [Voltar]")
+            ".. 🔙 Voltar")
                 current_dir=$(dirname "$current_dir")
                 ;;
-            "UPLOAD"*)
-                if [[ ${#selected_files[@]} -gt 0 ]]; then
-                    upload_selected_files
-                else
-                    echo "❌ Nenhum arquivo selecionado"
-                    sleep 1
-                fi
+            "ADD_BOOKMARK"*)
+                read -p "📝 Nome para este favorito: " bookmark_name </dev/tty
+                [[ -n "$bookmark_name" ]] && add_bookmark "$current_dir" "$bookmark_name"
+                ;;
+            "HISTORY"*)
+                show_upload_history
                 ;;
             "BACK"*)
                 return
                 ;;
+            "BOOKMARK"*)
+                local bookmark_path=$(echo "$choice" | cut -d'|' -f2)
+                current_dir="$bookmark_path"
+                ;;
             "DIR"*)
-                local folder_name=$(echo "$choice" | sed 's/^DIR //' | sed 's/\/$//')
+                local folder_name=$(echo "$choice" | sed 's/^DIR 📂 //' | sed 's/\/$//')
                 current_dir="$current_dir/$folder_name"
                 ;;
             "FILE"*)
-                local file_info=$(echo "$choice" | sed 's/^FILE [✓ ] //')
+                local file_info=$(echo "$choice" | sed 's/^FILE 📄 //' | sed 's/^⭐ //')
                 local filename=$(echo "$file_info" | sed 's/ ([^)]*)$//')
                 local filepath="$current_dir/$filename"
-                toggle_selection "$filepath"
+                
+                # Mostrar opções para o arquivo
+                show_file_options "$filepath"
                 ;;
-            "---")
+            "---"* | *"FAVORITOS"* | *"PASTAS E ARQUIVOS"*)
                 continue
                 ;;
         esac
     done
 }
 
+# Mostrar opções para arquivo selecionado
+show_file_options() {
+    local file="$1"
+    
+    local options=(
+        "upload 📤 Upload deste arquivo"
+        "info ℹ️ Informações do arquivo"
+        "back 🔙 Voltar"
+    )
+    
+    local choice=$(printf '%s\n' "${options[@]}" | \
+        sed 's/^[^ ]* //' | \
+        fzf --prompt="Arquivo: $(basename "$file") > " \
+            --header="Escolha uma ação" \
+            --height=10)
+    
+    case "$choice" in
+        "📤 Upload deste arquivo")
+            upload_single_file "$file"
+            ;;
+        "ℹ️ Informações do arquivo")
+            show_file_info "$file"
+            ;;
+    esac
+}
+
+# Mostrar informações do arquivo
+show_file_info() {
+    local file="$1"
+    
+    clear_screen
+    echo "ℹ️ Informações do Arquivo"
+    echo "─────────────────────────"
+    echo "📄 Nome: $(basename "$file")"
+    echo "📁 Pasta: $(dirname "$file")"
+    echo "💾 Tamanho: $(du -sh "$file" | cut -f1)"
+    echo "📅 Modificado: $(stat -c '%y' "$file" 2>/dev/null | cut -d. -f1)"
+    echo "🔗 Caminho completo: $file"
+    
+    # Verificar se está no histórico
+    if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
+        echo "⭐ Status: Já foi enviado anteriormente"
+    else
+        echo "📝 Status: Nunca foi enviado"
+    fi
+    
+    pause
+}
+
+# Mostrar histórico de uploads
+show_upload_history() {
+    if [[ ! -f "$HISTORY_FILE" ]] || [[ ! -s "$HISTORY_FILE" ]]; then
+        clear_screen
+        echo "📝 Histórico de Uploads"
+        echo "─────────────────────"
+        echo "Nenhum arquivo foi enviado ainda"
+        pause
+        return
+    fi
+    
+    local history_files=()
+    while IFS= read -r file; do
+        if [[ -f "$file" ]]; then
+            local size=$(du -sh "$file" 2>/dev/null | cut -f1)
+            history_files+=("📄 $(basename "$file") ($size)|$file")
+        fi
+    done < <(tac "$HISTORY_FILE")  # Inverter ordem (mais recentes primeiro)
+    
+    if [[ ${#history_files[@]} -eq 0 ]]; then
+        clear_screen
+        echo "📝 Histórico de Uploads"
+        echo "─────────────────────"
+        echo "Nenhum arquivo disponível no histórico"
+        pause
+        return
+    fi
+    
+    local choice=$(printf '%s\n' "${history_files[@]}" | \
+        fzf --prompt="Histórico > " \
+            --header="Selecione um arquivo do histórico" \
+            --delimiter='|' --with-nth=1)
+    
+    if [[ -n "$choice" ]]; then
+        local selected_file=$(echo "$choice" | cut -d'|' -f2)
+        upload_single_file "$selected_file"
+    fi
+}
+
 #===========================================
 # UPLOAD
 #===========================================
 
-# Upload rápido de arquivo único
-quick_upload() {
+# Upload de arquivo único
+upload_single_file() {
+    local file="$1"
+    
+    # Verificar se arquivo existe
+    if [[ ! -f "$file" ]]; then
+        echo "❌ Arquivo não encontrado: $file"
+        pause
+        return 1
+    fi
+    
     clear_screen
-    echo "⚡ Upload Rápido"
-    echo "───────────────"
-    
-    # Buscar arquivos
-    local file=$(find /mnt/c/Users/Dinabox/Desktop -type f \
-        \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.txt" \) \
-        2>/dev/null | \
-        fzf --prompt="Arquivo > " \
-            --header="Selecione um arquivo para upload" \
-            --preview="head -10 {}")
-    
-    [[ -z "$file" ]] && return
+    echo "📤 Upload de Arquivo"
+    echo "──────────────────"
+    echo "📄 Arquivo: $(basename "$file")"
+    echo "💾 Tamanho: $(du -sh "$file" | cut -f1)"
+    echo
     
     # Selecionar pasta de destino
     local folders=(
@@ -318,8 +406,9 @@ quick_upload() {
     )
     
     local folder=$(printf '%s\n' "${folders[@]}" | \
-        fzf --prompt="Pasta > " \
-            --header="Selecione a pasta de destino")
+        fzf --prompt="Pasta de destino > " \
+            --header="Selecione onde enviar o arquivo" \
+            --height=10)
     
     [[ -z "$folder" ]] && return
     
@@ -329,81 +418,52 @@ quick_upload() {
         [[ -z "$folder" ]] && return
     fi
     
-    # Confirmar upload
     echo
-    echo "📋 Resumo do Upload:"
+    echo "📋 Resumo:"
     echo "  📄 Arquivo: $(basename "$file")"
-    echo "  📁 Pasta: $folder"
+    echo "  📁 Destino: $folder"
     echo "  💾 Tamanho: $(du -sh "$file" | cut -f1)"
+    
+    # Verificar se já foi enviado
+    if [[ -f "$HISTORY_FILE" ]] && grep -q "^$file$" "$HISTORY_FILE" 2>/dev/null; then
+        echo "  ⚠️ Este arquivo já foi enviado anteriormente"
+    fi
+    
     echo
     
     if confirm "Confirmar upload?"; then
         perform_upload "$file" "$folder"
+        # Adicionar ao histórico após sucesso
+        add_to_history "$file"
     else
         echo "❌ Upload cancelado"
         sleep 1
     fi
 }
 
-# Upload de múltiplos arquivos
-upload_selected_files() {
-    [[ ${#selected_files[@]} -eq 0 ]] && return
-    
-    clear_screen
-    echo "📤 Upload Múltiplo"
-    echo "──────────────────"
-    
-    echo "Arquivos selecionados:"
-    local total_size=0
-    for file in "${selected_files[@]}"; do
-        local size_bytes=$(du -b "$file" 2>/dev/null | cut -f1)
-        local size_human=$(du -sh "$file" 2>/dev/null | cut -f1)
-        echo "  📄 $(basename "$file") ($size_human)"
-        total_size=$((total_size + size_bytes))
-    done
-    
-    local total_human=$(numfmt --to=iec $total_size 2>/dev/null || echo "$total_size bytes")
-    echo
-    echo "Total: ${#selected_files[@]} arquivos - $total_human"
-    echo
-    
-    # Pasta padrão
-    local folder="Endpoint configuração Máquinas"
-    read -p "📁 Pasta de destino [$folder]: " custom_folder </dev/tty
-    [[ -n "$custom_folder" ]] && folder="$custom_folder"
-    
-    if confirm "Confirmar upload de ${#selected_files[@]} arquivo(s)?"; then
-        echo
-        echo "🔄 Iniciando uploads..."
-        
-        local success=0
-        local failed=0
-        
-        for file in "${selected_files[@]}"; do
-            echo "📤 Enviando $(basename "$file")..."
-            if perform_upload "$file" "$folder" "silent"; then
-                ((success++))
-            else
-                ((failed++))
-            fi
-        done
-        
-        echo
-        echo "📊 Resultado:"
-        echo "  ✅ Sucessos: $success"
-        echo "  ❌ Falhas: $failed"
-        echo "  📁 Pasta: $folder"
-        
-        # Limpar seleções se tudo deu certo
-        if [[ $failed -eq 0 ]] && confirm "Limpar seleções?"; then
-            selected_files=()
-            echo "✅ Seleções limpas!"
-        fi
-        
+# Upload rápido (do histórico)
+quick_upload() {
+    if [[ ! -f "$HISTORY_FILE" ]] || [[ ! -s "$HISTORY_FILE" ]]; then
+        echo "📝 Nenhum histórico encontrado"
+        echo "Use o navegador de arquivos primeiro"
         pause
+        return
+    fi
+    
+    # Pegar o último arquivo do histórico
+    local last_file=$(tail -n 1 "$HISTORY_FILE")
+    
+    if [[ -f "$last_file" ]]; then
+        echo "⚡ Upload rápido do último arquivo:"
+        echo "📄 $(basename "$last_file")"
+        echo
+        
+        if confirm "Enviar novamente este arquivo?"; then
+            upload_single_file "$last_file"
+        fi
     else
-        echo "❌ Upload cancelado"
-        sleep 1
+        echo "❌ Último arquivo não encontrado"
+        pause
     fi
 }
 
@@ -411,11 +471,10 @@ upload_selected_files() {
 perform_upload() {
     local file="$1"
     local folder="$2"
-    local mode="${3:-normal}"
     
     # Verificar se arquivo existe
     if [[ ! -f "$file" ]]; then
-        [[ "$mode" != "silent" ]] && echo "❌ Arquivo não encontrado: $file"
+        echo "❌ Arquivo não encontrado: $file"
         return 1
     fi
     
@@ -426,31 +485,34 @@ perform_upload() {
     fi
     
     if [[ -z "$token" ]]; then
-        [[ "$mode" != "silent" ]] && echo "❌ Token não encontrado"
+        echo "❌ Token não encontrado"
         return 1
     fi
     
-    # Simular upload (substituir por upload real)
-    if [[ "$mode" != "silent" ]]; then
-        echo "🔄 Enviando $(basename "$file")..."
-    fi
+    echo "🔄 Enviando $(basename "$file")..."
     
-    sleep 1  # Simular tempo de upload
+    # Realizar upload real
+    local response=$(curl -s -X POST \
+        -H "Cookie: jwt_user=$token; user_jwt=$token" \
+        -F "arquivo[]=@$file" \
+        -F "pasta=$folder" \
+        "$CONFIG_URL")
     
-    # Aqui seria o upload real:
-    # local response=$(curl -s -X POST \
-    #     -H "Cookie: jwt_user=$token; user_jwt=$token" \
-    #     -F "arquivo[]=@$file" \
-    #     -F "pasta=$folder" \
-    #     "$CONFIG_URL")
-    
-    # Simular sucesso
-    if [[ "$mode" != "silent" ]]; then
-        echo "✅ Upload concluído!"
+    # Verificar resultado
+    if echo "$response" | grep -q "Arquivos enviados com sucesso"; then
+        echo "✅ Upload concluído com sucesso!"
         sleep 1
+        return 0
+    elif echo "$response" | grep -q "Usuário autenticado"; then
+        echo "⚠️ Upload realizado mas sem confirmação completa"
+        sleep 1
+        return 0
+    else
+        echo "❌ Erro no upload"
+        echo "Resposta: $response"
+        pause
+        return 1
     fi
-    
-    return 0
 }
 
 #===========================================
@@ -462,15 +524,20 @@ main_menu() {
     while true; do
         clear_screen
         
-        # Criar opções do menu na ordem correta
+        # Verificar se há histórico
+        local history_count=0
+        if [[ -f "$HISTORY_FILE" ]]; then
+            history_count=$(wc -l < "$HISTORY_FILE" 2>/dev/null || echo 0)
+        fi
+        
+        # Criar opções do menu
         local menu_options=(
-            "1|⚡ Upload Rápido"
-            "2|📁 Navegador de Arquivos"  
-            "3|📋 Ver Selecionados (${#selected_files[@]})"
-            "4|🗑️ Limpar Seleções"
+            "1|📁 Navegador de Arquivos"
+            "2|⚡ Upload Rápido (último arquivo)"
+            "3|📝 Histórico ($history_count arquivos)"
+            "4|⭐ Gerenciar Favoritos"
             "5|🔄 Renovar Token"
-            "6|ℹ️ Sobre"
-            "7|❌ Sair"
+            "6|❌ Sair"
         )
         
         # Mostrar menu
@@ -482,46 +549,50 @@ main_menu() {
         
         # Processar escolha
         case "$choice" in
-            "⚡ Upload Rápido")         quick_upload ;;
             "📁 Navegador de Arquivos") file_browser ;;
-            "📋 Ver Selecionados"*)    show_selected ;;
-            "🗑️ Limpar Seleções")      clear_selections ;;
-            "🔄 Renovar Token")        renew_token ;;
-            "ℹ️ Sobre")               show_about ;;
-            "❌ Sair")                clear; exit 0 ;;
-            "")                       clear; exit 0 ;;
+            "⚡ Upload Rápido"*) quick_upload ;;
+            "📝 Histórico"*) show_upload_history ;;
+            "⭐ Gerenciar Favoritos") manage_bookmarks ;;
+            "🔄 Renovar Token") renew_token ;;
+            "❌ Sair") clear; exit 0 ;;
+            "") clear; exit 0 ;;
         esac
     done
 }
 
-# Mostrar informações sobre o sistema
-show_about() {
-    clear_screen
-    cat << 'EOF'
-ℹ️ UPCODE - Sistema de Upload
-
-Versão: 2.1.0
-Desenvolvido por: Dinabox Systems
-
-📋 Recursos:
-• Upload rápido de arquivo único
-• Navegação interativa de pastas
-• Seleção múltipla de arquivos
-• Autenticação com token JWT
-• Interface moderna com fzf
-
-⌨️ Atalhos:
-• Enter: Confirmar/Navegar
-• Esc: Cancelar/Voltar  
-• Tab: Seleção múltipla (onde aplicável)
-• Ctrl+C: Sair do programa
-
-🔧 Configuração:
-• Token salvo em: ~/.upcode_token
-• Pasta padrão: /mnt/c/Users/Dinabox/Desktop/PROJECTS
-
-EOF
-    pause
+# Gerenciar favoritos
+manage_bookmarks() {
+    if [[ ! -f "$BOOKMARKS_FILE" ]] || [[ ! -s "$BOOKMARKS_FILE" ]]; then
+        clear_screen
+        echo "⭐ Gerenciar Favoritos"
+        echo "────────────────────"
+        echo "Nenhum favorito cadastrado"
+        echo
+        echo "Use o navegador de arquivos e adicione pastas aos favoritos"
+        pause
+        return
+    fi
+    
+    local bookmarks=()
+    while IFS='|' read -r path name; do
+        if [[ -d "$path" ]]; then
+            bookmarks+=("📁 $name|$path")
+        fi
+    done < "$BOOKMARKS_FILE"
+    
+    bookmarks+=("🔙 Voltar")
+    
+    local choice=$(printf '%s\n' "${bookmarks[@]}" | \
+        fzf --prompt="Favoritos > " \
+            --header="Selecione um favorito ou volte" \
+            --delimiter='|' --with-nth=1)
+    
+    if [[ "$choice" == "🔙 Voltar" ]]; then
+        return
+    elif [[ -n "$choice" ]]; then
+        local selected_path=$(echo "$choice" | cut -d'|' -f2)
+        file_browser "$selected_path"
+    fi
 }
 
 #===========================================
