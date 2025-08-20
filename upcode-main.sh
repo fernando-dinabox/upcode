@@ -461,12 +461,9 @@ upload_single_file() {
     
     # Selecionar pasta de destino
     local folders=(
-        "Endpoint configuração Máquinas"
-        "Scripts PHP"
-        "Arquivos JavaScript"
-        "Estilos CSS"
-        "Documentos HTML"
-        "Outros"
+        "Cutprefers (endpoints)"
+        "Resources (projetos avulso)"
+        "Configurador de máquinas (out)"
     )
     
     local folder=$(printf '%s\n' "${folders[@]}" | \
@@ -538,6 +535,7 @@ quick_upload() {
     fi
 }
 
+
 # Realizar upload (função auxiliar)
 perform_upload() {
     local file="$1"
@@ -560,36 +558,112 @@ perform_upload() {
         return 1
     fi
     
-    echo "🔄 Enviando $(basename "$file")..."
+    local filename=$(basename "$file")
+    echo "🔄 Enviando $filename..."
     
-    # Realizar upload real
-    local response=$(curl -s -X POST \
+    # Realizar upload com captura de erro HTTP
+    local temp_file=$(mktemp)
+    local http_code=$(curl -w "%{http_code}" -s -o "$temp_file" -X POST \
         -H "Cookie: jwt_user=$token; user_jwt=$token" \
         -F "arquivo[]=@$file" \
         -F "pasta=$folder" \
         "$CONFIG_URL")
     
+    local response=$(cat "$temp_file")
+    rm -f "$temp_file"
+    
+    echo "🔍 HTTP: $http_code | Resposta: $response"
+    
     # Verificar resultado
     if echo "$response" | grep -q "Arquivos enviados com sucesso"; then
-        echo "✅ Upload concluído com sucesso!"
-        sleep 1
+        echo "✅ $filename - Enviado com sucesso!"
         return 0
     elif echo "$response" | grep -q "Usuário autenticado"; then
-        echo "⚠️ Upload realizado mas sem confirmação completa"
-        sleep 1
+        echo "⚠️ $filename - Autenticado mas sem confirmação"
         return 0
     else
-        echo "❌ Erro no upload"
-        echo "Resposta: $response"
+        echo "❌ $filename - Erro no upload"
         pause
         return 1
     fi
 }
 
+
+
+# Função para testar upload direto (debug)
+test_upload() {
+    clear_screen
+    echo "🧪 Teste de Upload Direto"
+    echo "────────────────────────"
+    echo
+    
+    # Pedir arquivo para teste
+    read -p "📄 Caminho do arquivo: " test_file </dev/tty
+    
+    if [[ ! -f "$test_file" ]]; then
+        echo "❌ Arquivo não encontrado: $test_file"
+        pause
+        return 1
+    fi
+    
+    # Pedir pasta
+    read -p "📁 Pasta destino: " test_folder </dev/tty
+    [[ -z "$test_folder" ]] && test_folder="Endpoint configuração Máquinas"
+    
+    echo
+    echo "🔄 Testando upload..."
+    echo "📄 Arquivo: $(basename "$test_file")"
+    echo "📁 Pasta: $test_folder"
+    echo
+    
+    # Obter token
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -z "$token" ]]; then
+        echo "❌ Token não encontrado - faça login primeiro"
+        pause
+        return 1
+    fi
+    
+    echo "🔑 Token: ${token:0:20}..."
+    echo
+    
+    # Fazer upload com verbose
+    echo "🚀 Executando comando curl..."
+    local response=$(curl -v -X POST \
+        -H "Cookie: jwt_user=$token; user_jwt=$token" \
+        -F "arquivo[]=@$test_file" \
+        -F "pasta=$test_folder" \
+        "$CONFIG_URL" 2>&1)
+    
+    echo
+    echo "📥 Resposta completa:"
+    echo "════════════════════"
+    echo "$response"
+    echo "════════════════════"
+    echo
+    
+    # Análise da resposta
+    if echo "$response" | grep -q "Arquivos enviados com sucesso"; then
+        echo "✅ Upload realizado com sucesso!"
+    elif echo "$response" | grep -q "Usuário autenticado"; then
+        echo "⚠️ Usuário autenticado mas sem confirmação completa"
+    elif echo "$response" | grep -q "HTTP/"; then
+        local http_code=$(echo "$response" | grep "HTTP/" | tail -1)
+        echo "🌐 Código HTTP: $http_code"
+    else
+        echo "❓ Resposta não reconhecida"
+    fi
+    
+    pause
+}
+
 #===========================================
 # MENU PRINCIPAL
 #===========================================
-
 # Menu principal
 main_menu() {
     while true; do
@@ -608,6 +682,8 @@ main_menu() {
             "history|📝 Histórico ($history_count arquivos)"
             "favorites|⭐ Gerenciar Favoritos"
             "token|🔄 Renovar Token"
+            "test|🧪 Teste de Upload (debug)"
+            "clean|🧹 Limpar Dados"
             "exit|❌ Sair"
         )
         
@@ -628,6 +704,8 @@ main_menu() {
                     "history") show_upload_history ;;
                     "favorites") manage_bookmarks ;;
                     "token") renew_token ;;
+                    "test") test_upload ;;
+                    "clean") clean_data ;;
                     "exit") clear; exit 0 ;;
                 esac
                 break
@@ -638,6 +716,72 @@ main_menu() {
         [[ -z "$choice" ]] && { clear; exit 0; }
     done
 }
+
+# Limpar dados do sistema
+clean_data() {
+    clear_screen
+    echo "🧹 Limpar Dados do Sistema"
+    echo "─────────────────────────"
+    echo
+    
+    local clean_options=(
+        "token|🔑 Limpar Token (forçar novo login)"
+        "history|📝 Limpar Histórico de Uploads"
+        "bookmarks|⭐ Limpar Favoritos"
+        "all|🗑️ Limpar TUDO"
+        "back|🔙 Voltar"
+    )
+    
+    local choice=$(printf '%s\n' "${clean_options[@]}" | \
+        sed 's/^[^|]*|//' | \
+        fzf --prompt="Limpar > " \
+            --header="O que deseja limpar?" \
+            --height=10)
+    
+    # Encontrar a ação correspondente
+    for option in "${clean_options[@]}"; do
+        if [[ "$option" == *"|$choice" ]]; then
+            local action=$(echo "$option" | cut -d'|' -f1)
+            
+            case "$action" in
+                "token")
+                    if confirm "Limpar token? (será necessário fazer login novamente)"; then
+                        rm -f "$TOKEN_FILE"
+                        echo "✅ Token removido!"
+                        sleep 1
+                    fi
+                    ;;
+                "history")
+                    if confirm "Limpar histórico de uploads?"; then
+                        rm -f "$HISTORY_FILE"
+                        echo "✅ Histórico limpo!"
+                        sleep 1
+                    fi
+                    ;;
+                "bookmarks")
+                    if confirm "Limpar favoritos?"; then
+                        rm -f "$BOOKMARKS_FILE"
+                        echo "✅ Favoritos removidos!"
+                        sleep 1
+                    fi
+                    ;;
+                "all")
+                    if confirm "⚠️ LIMPAR TODOS OS DADOS? (token, histórico e favoritos)"; then
+                        rm -f "$TOKEN_FILE" "$HISTORY_FILE" "$BOOKMARKS_FILE"
+                        echo "✅ Todos os dados foram limpos!"
+                        echo "ℹ️ Será necessário fazer login novamente"
+                        sleep 2
+                    fi
+                    ;;
+                "back")
+                    return
+                    ;;
+            esac
+            break
+        fi
+    done
+}
+
 
 # Gerenciar favoritos
 manage_bookmarks() {
