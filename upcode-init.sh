@@ -1,8 +1,8 @@
 #!/bin/bash
-# filepath: upcode-init.sh (no seu repositório)
+# filepath: upcode-init.sh
 
-# URL do script principal
-MAIN_SCRIPT_URL="https://raw.githubusercontent.com/seu-usuario/seu-repo/main/upcode-main.sh"
+# URL do script principal (usando a URL raw correta)
+MAIN_SCRIPT_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/main/upcode-main.sh"
 
 # Baixar e executar o script principal
 curl -s "$MAIN_SCRIPT_URL" | bash
