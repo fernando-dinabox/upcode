@@ -24,8 +24,9 @@ do_login() {
     echo "🔐 Sistema de Upload - Login necessário"
     echo "─────────────────────────────────────"
     
-    read -p "👤 Usuário: " username
-    read -s -p "🔑 Senha: " password
+    # Redirecionar entrada para /dev/tty para funcionar com pipe
+    read -p "👤 Usuário: " username </dev/tty
+    read -s -p "🔑 Senha: " password </dev/tty
     echo
     
     # Validação
@@ -53,6 +54,7 @@ do_login() {
         return 0
     else
         echo "❌ Falha na autenticação!"
+        echo "Resposta da API: $response"
         exit 1
     fi
 }
@@ -68,7 +70,7 @@ show_menu() {
     echo "3. 🔄 Renovar token"
     echo "4. ❌ Sair"
     echo
-    read -p "Escolha uma opção [1-4]: " choice
+    read -p "Escolha uma opção [1-4]: " choice </dev/tty
     
     case $choice in
         1) upload_file_menu ;;
@@ -101,14 +103,14 @@ upload_file_menu() {
     local default_file="/mnt/c/Users/Dinabox/Desktop/PROJECTS/Endpoints/db_cut_prefers.php"
     
     echo "Arquivo padrão: $default_file"
-    read -p "Pressione Enter para usar o padrão ou digite outro caminho: " custom_file
+    read -p "Pressione Enter para usar o padrão ou digite outro caminho: " custom_file </dev/tty
     
     local file_path="${custom_file:-$default_file}"
     
     # Pasta padrão
     local default_folder="Endpoint configuração Máquinas"
     echo "Pasta padrão: $default_folder"
-    read -p "Pressione Enter para usar o padrão ou digite outra pasta: " custom_folder
+    read -p "Pressione Enter para usar o padrão ou digite outra pasta: " custom_folder </dev/tty
     
     local folder_name="${custom_folder:-$default_folder}"
     
@@ -122,7 +124,7 @@ select_folder_menu() {
     echo "─────────────────────"
     echo "🚧 Funcionalidade em desenvolvimento..."
     echo
-    read -p "Pressione Enter para voltar ao menu..."
+    read -p "Pressione Enter para voltar ao menu..." </dev/tty
     show_menu
 }
 
@@ -135,7 +137,7 @@ upload_file() {
     # Verificar se arquivo existe
     if [[ ! -f "$arquivo" ]]; then
         echo "❌ Arquivo não encontrado: $arquivo"
-        read -p "Pressione Enter para continuar..."
+        read -p "Pressione Enter para continuar..." </dev/tty
         show_menu
         return 1
     fi
@@ -163,7 +165,7 @@ upload_file() {
     fi
     
     echo
-    read -p "Pressione Enter para voltar ao menu..."
+    read -p "Pressione Enter para voltar ao menu..." </dev/tty
     show_menu
 }
 
