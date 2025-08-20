@@ -1,53 +1,201 @@
 #!/bin/bash
 # filepath: upcode-main.sh
 
-# Configurações
+#===========================================
+# CONFIGURAÇÕES
+#===========================================
+
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
+AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
 TOKEN_FILE="$HOME/.upcode_token"
-UPLOAD_TOKEN="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." # Token fixo para teste
 
 # Array para arquivos selecionados
 declare -a selected_files=()
 
+# Configurações de interface
+FZF_DEFAULT_OPTS="--height=40% --border --margin=1 --color=fg:#f8f8f2,bg:#282a36,hl:#bd93f9"
+
+#===========================================
+# UTILITÁRIOS
+#===========================================
+
 # Verificar dependências
 check_dependencies() {
     if ! command -v fzf &> /dev/null; then
-        echo "Erro: fzf não encontrado"
-        echo "Execute: sudo apt install fzf"
+        echo "❌ Erro: fzf não encontrado"
+        echo "📦 Execute: sudo apt install fzf"
         exit 1
     fi
 }
 
-# Menu principal
-main_menu() {
-    while true; do
-        local menu_options=(
-            "upload    Upload Rápido"
-            "browse    Navegador de Arquivos"
-            "selected  Ver Selecionados (${#selected_files[@]})"
-            "clear     Limpar Seleções"
-            "about     Sobre"
-            "exit      Sair"
-        )
-        
-        local choice=$(printf '%s\n' "${menu_options[@]}" | \
-            fzf --delimiter=' ' --with-nth=2.. \
-                --height=12 --border --margin=1 \
-                --prompt="UPCODE > " \
-                --header="Sistema de Upload de Arquivos" \
-                --preview-window=hidden | cut -d' ' -f1)
-        
-        case "$choice" in
-            "upload")   quick_upload ;;
-            "browse")   file_browser ;;
-            "selected") show_selected ;;
-            "clear")    clear_selections ;;
-            "about")    show_about ;;
-            "exit")     clear; exit 0 ;;
-            "")         clear; exit 0 ;;
-        esac
-    done
+# Função para pausar
+pause() {
+    echo
+    read -p "Pressione Enter para continuar..." </dev/tty
 }
+
+# Função para confirmação
+confirm() {
+    local message="$1"
+    read -p "$message (s/N): " -n 1 response </dev/tty
+    echo
+    [[ "$response" =~ ^[sS]$ ]]
+}
+
+# Limpar tela
+clear_screen() {
+    clear
+    echo "🚀 UPCODE - Sistema de Upload"
+    echo "═════════════════════════════"
+    echo
+}
+
+#===========================================
+# AUTENTICAÇÃO
+#===========================================
+
+# Verificar se token existe e é válido
+check_token() {
+    if [[ -f "$TOKEN_FILE" ]]; then
+        local token=$(cat "$TOKEN_FILE" 2>/dev/null)
+        if [[ -n "$token" && "$token" != "null" ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Fazer login e obter token
+do_login() {
+    clear_screen
+    echo "🔐 Login necessário"
+    echo "─────────────────"
+    
+    read -p "👤 Usuário: " username </dev/tty
+    read -s -p "🔑 Senha: " password </dev/tty
+    echo
+    
+    # Validação
+    if [[ -z "$username" || -z "$password" ]]; then
+        echo "❌ Usuário e senha são obrigatórios!"
+        pause
+        exit 1
+    fi
+    
+    echo "🔄 Autenticando..."
+    
+    # Fazer requisição de login
+    local response=$(curl -s -X POST \
+        -d "username=$username" \
+        -d "password=$password" \
+        "$AUTH_URL")
+    
+    # Extrair token da resposta JSON
+    local token=$(echo "$response" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+    
+    if [[ -n "$token" && "$token" != "null" ]]; then
+        # Salvar token
+        echo "$token" > "$TOKEN_FILE"
+        chmod 600 "$TOKEN_FILE"
+        echo "✅ Login realizado com sucesso!"
+        sleep 1
+        return 0
+    else
+        echo "❌ Falha na autenticação!"
+        echo "Resposta: $response"
+        pause
+        exit 1
+    fi
+}
+
+# Renovar token
+renew_token() {
+    rm -f "$TOKEN_FILE"
+    do_login
+}
+
+#===========================================
+# SELEÇÃO DE ARQUIVOS
+#===========================================
+
+# Alternar seleção de arquivo
+toggle_selection() {
+    local file="$1"
+    
+    # Verificar se já está selecionado
+    for i in "${!selected_files[@]}"; do
+        if [[ "${selected_files[$i]}" == "$file" ]]; then
+            unset "selected_files[$i]"
+            selected_files=("${selected_files[@]}")  # Reindexar
+            echo "➖ Removido: $(basename "$file")"
+            sleep 0.5
+            return
+        fi
+    done
+    
+    # Adicionar à seleção
+    selected_files+=("$file")
+    echo "➕ Adicionado: $(basename "$file")"
+    sleep 0.5
+}
+
+# Limpar seleções
+clear_selections() {
+    if [[ ${#selected_files[@]} -eq 0 ]]; then
+        echo "ℹ️ Nenhuma seleção para limpar"
+    else
+        selected_files=()
+        echo "✅ ${#selected_files[@]} seleções limpas!"
+    fi
+    sleep 1
+}
+
+# Mostrar arquivos selecionados
+show_selected() {
+    clear_screen
+    
+    if [[ ${#selected_files[@]} -eq 0 ]]; then
+        echo "📋 Nenhum arquivo selecionado"
+        pause
+        return
+    fi
+    
+    echo "📋 Arquivos Selecionados (${#selected_files[@]})"
+    echo "─────────────────────────────"
+    
+    # Criar lista para fzf
+    local file_list=()
+    for file in "${selected_files[@]}"; do
+        local size=$(du -sh "$file" 2>/dev/null | cut -f1)
+        local basename_file=$(basename "$file")
+        file_list+=("$basename_file ($size)")
+    done
+    
+    # Mostrar no fzf para remoção opcional
+    local to_remove=$(printf '%s\n' "${file_list[@]}" | \
+        fzf --multi --prompt="Remover > " \
+            --header="Selecione arquivos para remover (Tab para múltiplos)")
+    
+    if [[ -n "$to_remove" ]]; then
+        while IFS= read -r item; do
+            local filename=$(echo "$item" | sed 's/ ([^)]*)$//')
+            for i in "${!selected_files[@]}"; do
+                if [[ "$(basename "${selected_files[$i]}")" == "$filename" ]]; then
+                    echo "➖ Removendo: $filename"
+                    unset "selected_files[$i]"
+                fi
+            done
+        done <<< "$to_remove"
+        
+        selected_files=("${selected_files[@]}")  # Reindexar
+        echo "✅ Arquivos removidos da seleção"
+        sleep 1
+    fi
+}
+
+#===========================================
+# NAVEGAÇÃO DE ARQUIVOS
+#===========================================
 
 # Navegador de arquivos
 file_browser() {
@@ -59,100 +207,110 @@ file_browser() {
     fi
     
     while true; do
+        clear_screen
+        echo "📁 Navegador: $(basename "$current_dir")"
+        echo "─────────────────────────────────"
+        
         local items=()
         
-        # Opção para voltar
+        # Opção para voltar (se não estiver na raiz)
         if [[ "$current_dir" != "/mnt/c" ]]; then
-            items+=("..  [Voltar]")
+            items+=(".. [Voltar]")
         fi
         
-        # Listar diretórios
+        # Listar diretórios primeiro
         while IFS= read -r -d '' dir; do
+            [[ -d "$dir" ]] || continue
             local dirname=$(basename "$dir")
-            items+=("d   $dirname/")
+            items+=("DIR $dirname/")
         done < <(find "$current_dir" -maxdepth 1 -type d ! -path "$current_dir" -print0 2>/dev/null | sort -z)
         
         # Listar arquivos
         while IFS= read -r -d '' file; do
+            [[ -f "$file" ]] || continue
             local filename=$(basename "$file")
-            local size=$(du -sh "$file" 2>/dev/null | cut -f1)
+            local size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
             local mark=" "
             
             # Verificar se está selecionado
-            for selected in "${selected_files[@]}"; do
-                if [[ "$selected" == "$file" ]]; then
-                    mark="✓"
-                    break
-                fi
-            done
+            if [[ " ${selected_files[@]} " =~ " $file " ]]; then
+                mark="✓"
+            fi
             
-            items+=("$mark   $filename ($size)")
+            items+=("FILE $mark $filename ($size)")
         done < <(find "$current_dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
         
-        # Adicionar opções de ação
-        items+=("")
-        items+=("up  Upload Selecionados")
-        items+=("<<  Voltar ao Menu")
+        # Adicionar opções de controle
+        items+=("---")
+        items+=("UPLOAD Upload Selecionados (${#selected_files[@]})")
+        items+=("BACK Voltar ao Menu Principal")
         
         # Mostrar seletor
         local choice=$(printf '%s\n' "${items[@]}" | \
-            fzf --height=20 --border --margin=1 \
-                --prompt="$(basename "$current_dir")/ > " \
-                --header="Espaço=Selecionar | Enter=Navegar" \
-                --bind="space:toggle+down" \
-                --multi)
+            fzf --prompt="$(basename "$current_dir") > " \
+                --header="Enter=Navegar/Selecionar | Esc=Voltar" \
+                --preview-window=hidden)
         
+        # Sair se cancelado
         [[ -z "$choice" ]] && return
         
         # Processar escolha
         case "$choice" in
-            "..  [Voltar]")
+            ".. [Voltar]")
                 current_dir=$(dirname "$current_dir")
                 ;;
-            "up  Upload Selecionados")
+            "UPLOAD"*)
                 if [[ ${#selected_files[@]} -gt 0 ]]; then
                     upload_selected_files
                 else
-                    echo "Nenhum arquivo selecionado"
+                    echo "❌ Nenhum arquivo selecionado"
                     sleep 1
                 fi
                 ;;
-            "<<  Voltar ao Menu")
+            "BACK"*)
                 return
                 ;;
-            d\ \ \ *)
-                local folder_name=$(echo "$choice" | sed 's/^d   //' | sed 's/\/$//')
+            "DIR"*)
+                local folder_name=$(echo "$choice" | sed 's/^DIR //' | sed 's/\/$//')
                 current_dir="$current_dir/$folder_name"
                 ;;
-            [\ ✓]\ \ \ *)
-                local filename=$(echo "$choice" | sed 's/^[✓ ]   //' | sed 's/ ([^)]*)$//')
+            "FILE"*)
+                local file_info=$(echo "$choice" | sed 's/^FILE [✓ ] //')
+                local filename=$(echo "$file_info" | sed 's/ ([^)]*)$//')
                 local filepath="$current_dir/$filename"
                 toggle_selection "$filepath"
+                ;;
+            "---")
+                continue
                 ;;
         esac
     done
 }
 
-# Upload rápido
+#===========================================
+# UPLOAD
+#===========================================
+
+# Upload rápido de arquivo único
 quick_upload() {
-    echo "Buscando arquivos..."
+    clear_screen
+    echo "⚡ Upload Rápido"
+    echo "───────────────"
     
-    local file=$(find /mnt/c/Users/Dinabox/Desktop -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" 2>/dev/null | \
-        sed 's|.*/||' | \
-        fzf --height=15 --border --margin=1 \
-            --prompt="Arquivo > " \
+    # Buscar arquivos
+    local file=$(find /mnt/c/Users/Dinabox/Desktop -type f \
+        \( -name "*.php" -o -name "*.js" -o -name "*.css" -o -name "*.html" -o -name "*.txt" \) \
+        2>/dev/null | \
+        fzf --prompt="Arquivo > " \
             --header="Selecione um arquivo para upload" \
-            --preview="echo 'Arquivo: {}'" \
-            --preview-window=up:3)
+            --preview="head -10 {}")
     
     [[ -z "$file" ]] && return
     
-    # Encontrar caminho completo
-    local filepath=$(find /mnt/c/Users/Dinabox/Desktop -name "$file" 2>/dev/null | head -1)
-    
+    # Selecionar pasta de destino
     local folders=(
         "Endpoint configuração Máquinas"
-        "Scripts PHP" 
+        "Scripts PHP"
         "Arquivos JavaScript"
         "Estilos CSS"
         "Documentos HTML"
@@ -160,169 +318,228 @@ quick_upload() {
     )
     
     local folder=$(printf '%s\n' "${folders[@]}" | \
-        fzf --height=10 --border --margin=1 \
-            --prompt="Pasta > " \
+        fzf --prompt="Pasta > " \
             --header="Selecione a pasta de destino")
     
     [[ -z "$folder" ]] && return
     
+    # Se escolheu "Outros", pedir nome personalizado
     if [[ "$folder" == "Outros" ]]; then
-        echo -n "Nome da pasta: "
-        read folder
+        read -p "📁 Nome da pasta: " folder </dev/tty
+        [[ -z "$folder" ]] && return
     fi
     
+    # Confirmar upload
     echo
-    echo "Upload em andamento..."
-    echo "Arquivo: $file"
-    echo "Destino: $folder"
-    
-    # Simular upload
-    sleep 2
-    echo "✓ Upload concluído com sucesso!"
+    echo "📋 Resumo do Upload:"
+    echo "  📄 Arquivo: $(basename "$file")"
+    echo "  📁 Pasta: $folder"
+    echo "  💾 Tamanho: $(du -sh "$file" | cut -f1)"
     echo
-    read -p "Pressione Enter para continuar..."
-}
-
-# Alternar seleção de arquivo
-toggle_selection() {
-    local file="$1"
-    local found=false
     
-    # Verificar se já está selecionado
-    for i in "${!selected_files[@]}"; do
-        if [[ "${selected_files[$i]}" == "$file" ]]; then
-            unset "selected_files[$i]"
-            selected_files=("${selected_files[@]}")  # Reindexar
-            echo "Removido: $(basename "$file")"
-            found=true
-            break
-        fi
-    done
-    
-    # Se não encontrado, adicionar
-    if [[ "$found" == false ]]; then
-        selected_files+=("$file")
-        echo "Adicionado: $(basename "$file")"
-    fi
-    
-    sleep 0.5
-}
-
-# Mostrar arquivos selecionados
-show_selected() {
-    if [[ ${#selected_files[@]} -eq 0 ]]; then
-        echo "Nenhum arquivo selecionado"
-        read -p "Pressione Enter para continuar..."
-        return
-    fi
-    
-    local file_list=()
-    for file in "${selected_files[@]}"; do
-        local size=$(du -sh "$file" 2>/dev/null | cut -f1)
-        file_list+=("$(basename "$file") ($size)")
-    done
-    
-    local selection=$(printf '%s\n' "${file_list[@]}" | \
-        fzf --height=15 --border --margin=1 \
-            --prompt="Selecionados > " \
-            --header="Enter=Remover | Esc=Voltar" \
-            --multi)
-    
-    # Remover arquivos selecionados
-    if [[ -n "$selection" ]]; then
-        while IFS= read -r item; do
-            local filename=$(echo "$item" | sed 's/ ([^)]*)$//')
-            for i in "${!selected_files[@]}"; do
-                if [[ "$(basename "${selected_files[$i]}")" == "$filename" ]]; then
-                    unset "selected_files[$i]"
-                fi
-            done
-        done <<< "$selection"
-        selected_files=("${selected_files[@]}")  # Reindexar
-        echo "Arquivos removidos da seleção"
+    if confirm "Confirmar upload?"; then
+        perform_upload "$file" "$folder"
+    else
+        echo "❌ Upload cancelado"
         sleep 1
     fi
 }
 
-# Limpar seleções
-clear_selections() {
-    selected_files=()
-    echo "Seleções limpas!"
-    sleep 1
-}
-
-# Upload de arquivos selecionados
+# Upload de múltiplos arquivos
 upload_selected_files() {
     [[ ${#selected_files[@]} -eq 0 ]] && return
     
-    echo
-    echo "Arquivos para upload:"
+    clear_screen
+    echo "📤 Upload Múltiplo"
+    echo "──────────────────"
+    
+    echo "Arquivos selecionados:"
+    local total_size=0
     for file in "${selected_files[@]}"; do
-        echo "  $(basename "$file")"
+        local size_bytes=$(du -b "$file" 2>/dev/null | cut -f1)
+        local size_human=$(du -sh "$file" 2>/dev/null | cut -f1)
+        echo "  📄 $(basename "$file") ($size_human)"
+        total_size=$((total_size + size_bytes))
     done
+    
+    local total_human=$(numfmt --to=iec $total_size 2>/dev/null || echo "$total_size bytes")
+    echo
+    echo "Total: ${#selected_files[@]} arquivos - $total_human"
     echo
     
-    read -p "Confirmar upload de ${#selected_files[@]} arquivo(s)? (s/N): " confirm
+    # Pasta padrão
+    local folder="Endpoint configuração Máquinas"
+    read -p "📁 Pasta de destino [$folder]: " custom_folder </dev/tty
+    [[ -n "$custom_folder" ]] && folder="$custom_folder"
     
-    if [[ "$confirm" =~ ^[sS]$ ]]; then
+    if confirm "Confirmar upload de ${#selected_files[@]} arquivo(s)?"; then
         echo
-        echo "Iniciando upload..."
+        echo "🔄 Iniciando uploads..."
         
         local success=0
+        local failed=0
+        
         for file in "${selected_files[@]}"; do
-            echo "Enviando $(basename "$file")..."
-            sleep 1  # Simular upload
-            ((success++))
+            echo "📤 Enviando $(basename "$file")..."
+            if perform_upload "$file" "$folder" "silent"; then
+                ((success++))
+            else
+                ((failed++))
+            fi
         done
         
         echo
-        echo "✓ Upload concluído!"
-        echo "  Arquivos enviados: $success"
-        echo "  Pasta: Endpoint configuração Máquinas"
+        echo "📊 Resultado:"
+        echo "  ✅ Sucessos: $success"
+        echo "  ❌ Falhas: $failed"
+        echo "  📁 Pasta: $folder"
         
-        # Limpar seleções após upload
-        selected_files=()
+        # Limpar seleções se tudo deu certo
+        if [[ $failed -eq 0 ]] && confirm "Limpar seleções?"; then
+            selected_files=()
+            echo "✅ Seleções limpas!"
+        fi
+        
+        pause
     else
-        echo "Upload cancelado"
+        echo "❌ Upload cancelado"
+        sleep 1
+    fi
+}
+
+# Realizar upload (função auxiliar)
+perform_upload() {
+    local file="$1"
+    local folder="$2"
+    local mode="${3:-normal}"
+    
+    # Verificar se arquivo existe
+    if [[ ! -f "$file" ]]; then
+        [[ "$mode" != "silent" ]] && echo "❌ Arquivo não encontrado: $file"
+        return 1
     fi
     
-    echo
-    read -p "Pressione Enter para continuar..."
+    # Obter token
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -z "$token" ]]; then
+        [[ "$mode" != "silent" ]] && echo "❌ Token não encontrado"
+        return 1
+    fi
+    
+    # Simular upload (substituir por upload real)
+    if [[ "$mode" != "silent" ]]; then
+        echo "🔄 Enviando $(basename "$file")..."
+    fi
+    
+    sleep 1  # Simular tempo de upload
+    
+    # Aqui seria o upload real:
+    # local response=$(curl -s -X POST \
+    #     -H "Cookie: jwt_user=$token; user_jwt=$token" \
+    #     -F "arquivo[]=@$file" \
+    #     -F "pasta=$folder" \
+    #     "$CONFIG_URL")
+    
+    # Simular sucesso
+    if [[ "$mode" != "silent" ]]; then
+        echo "✅ Upload concluído!"
+        sleep 1
+    fi
+    
+    return 0
 }
 
-# Sobre
+#===========================================
+# MENU PRINCIPAL
+#===========================================
+
+# Menu principal
+main_menu() {
+    while true; do
+        clear_screen
+        
+        # Criar opções do menu na ordem correta
+        local menu_options=(
+            "1|⚡ Upload Rápido"
+            "2|📁 Navegador de Arquivos"  
+            "3|📋 Ver Selecionados (${#selected_files[@]})"
+            "4|🗑️ Limpar Seleções"
+            "5|🔄 Renovar Token"
+            "6|ℹ️ Sobre"
+            "7|❌ Sair"
+        )
+        
+        # Mostrar menu
+        local choice=$(printf '%s\n' "${menu_options[@]}" | \
+            sed 's/^[0-9]|//' | \
+            fzf --prompt="UPCODE > " \
+                --header="Sistema de Upload de Arquivos" \
+                --preview-window=hidden)
+        
+        # Processar escolha
+        case "$choice" in
+            "⚡ Upload Rápido")         quick_upload ;;
+            "📁 Navegador de Arquivos") file_browser ;;
+            "📋 Ver Selecionados"*)    show_selected ;;
+            "🗑️ Limpar Seleções")      clear_selections ;;
+            "🔄 Renovar Token")        renew_token ;;
+            "ℹ️ Sobre")               show_about ;;
+            "❌ Sair")                clear; exit 0 ;;
+            "")                       clear; exit 0 ;;
+        esac
+    done
+}
+
+# Mostrar informações sobre o sistema
 show_about() {
+    clear_screen
     cat << 'EOF'
+ℹ️ UPCODE - Sistema de Upload
 
-UPCODE - Sistema de Upload de Arquivos
-=====================================
-
-Versão: 2.0
+Versão: 2.1.0
 Desenvolvido por: Dinabox Systems
 
-Recursos:
+📋 Recursos:
 • Upload rápido de arquivo único
-• Navegação interativa de pastas  
+• Navegação interativa de pastas
 • Seleção múltipla de arquivos
-• Interface limpa com fzf
+• Autenticação com token JWT
+• Interface moderna com fzf
 
-Atalhos:
-• Espaço: Selecionar múltiplos
+⌨️ Atalhos:
 • Enter: Confirmar/Navegar
-• Esc: Cancelar/Voltar
-• Ctrl+C: Sair
+• Esc: Cancelar/Voltar  
+• Tab: Seleção múltipla (onde aplicável)
+• Ctrl+C: Sair do programa
+
+🔧 Configuração:
+• Token salvo em: ~/.upcode_token
+• Pasta padrão: /mnt/c/Users/Dinabox/Desktop/PROJECTS
 
 EOF
-    read -p "Pressione Enter para continuar..."
+    pause
 }
 
-# Função principal
+#===========================================
+# FUNÇÃO PRINCIPAL
+#===========================================
+
 main() {
-    clear
+    # Verificar dependências
     check_dependencies
-    echo "Iniciando UPCODE..."
-    sleep 1
+    
+    # Verificar autenticação
+    if ! check_token; then
+        do_login
+    fi
+    
+    # Iniciar menu principal
     main_menu
 }
 
+# Executar
 main
