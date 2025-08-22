@@ -1,12 +1,20 @@
 #!/bin/bash
-# UPCODE - Sistema de Upload - SEMPRE DO SERVIDOR
-# Versão que executa direto sem loops
+# filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-fixed.sh
+# UPCODE - Sistema de Upload FUNCIONAL
+# Versão corrigida com upload real de estrutura de pastas
 
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="2.0.0"
+CURRENT_VERSION="2.0.0"  
+# VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  
+# UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
+VERSION_FILE="$HOME/.upcode_version"
+
+
+UPDATE_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"    
+
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
 TOKEN_FILE="$HOME/.upcode_token"
@@ -19,6 +27,10 @@ SYNC_LOG_FILE="$HOME/.upcode_sync_debug.log"
 # Configurações de interface
 FZF_DEFAULT_OPTS="--height=40% --border --margin=1 --color=fg:#f8f8f2,bg:#282a36,hl:#bd93f9"
 
+#===========================================
+# SISTEMA DE INSTALAÇÃO E ATUALIZAÇÃO (NOVO)
+#===========================================
+
 show_banner() {
     clear
     echo "
@@ -29,10 +41,12 @@ show_banner() {
     ╚██████╔╝██║     ╚██████╗╚██████╔╝██████╔╝███████╗
      ╚═════╝ ╚═╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
     "
-    echo "    🚀 Sistema de upload via terminal v$CURRENT_VERSION"
+    echo "    🚀 Sistema de upload arquivos via terminal. v$CURRENT_VERSION"
     echo "    ═══════════════════════════════════════════════"
     echo
+    
 }
+
 
 
 install_fzf() {
@@ -1214,11 +1228,27 @@ clean_data() {
 }
 
 #===========================================
-    # Inicialização do script
+# FUNÇÃO PRINCIPAL (modificada apenas para adicionar verificação)
 #===========================================
 
 
-# Executar programa principal diretamente
+show_progress() {
+    local message="$1"
+    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local i=0
+    
+    while [ $i -lt 20 ]; do
+        printf "\r%s %s" "$message" "${chars:$((i % ${#chars})):1}"
+        sleep 0.1
+        ((i++))
+    done
+    printf "\r%s ✅\n" "$message"
+}
+
+#===========================================
+# INÍCIO DIRETO DO PROGRAMA
+#===========================================
+
 show_banner
 check_dependencies
 
