@@ -7,10 +7,10 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="1.0.2"
-VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"
-UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
-VERSION_FILE="$HOME/.upcode_version"
+CURRENT_VERSION="2.0.0"  # Adicionado
+VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  # Adicionado
+UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"      # Adicionado
+VERSION_FILE="$HOME/.upcode_version"                            # Adicionado
 
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
@@ -1251,17 +1251,11 @@ main() {
         fi
     fi
     
-    echo "⚠️ Usando versão local (sem conexão ou erro no download)"
+    # Se chegou aqui, não conseguiu baixar a versão do servidor
+    echo "❌ Falha ao baixar versão do servidor"
+    echo "🌐 Verifique sua conexão com a internet"
     rm -f "$temp_script"
-    sleep 2
-    
-    check_dependencies
-    
-    if ! check_token; then
-        do_login
-    fi
-    
-    main_menu
+    exit 1
 }
 # Executar com suporte a parâmetro --update
 main "$@"
