@@ -7,10 +7,10 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="1.0.1"  # Adicionado
-VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  # Adicionado
-UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"      # Adicionado
-VERSION_FILE="$HOME/.upcode_version"                            # Adicionado
+CURRENT_VERSION="1.0.1"
+VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  
+UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"  
+VERSION_FILE="$HOME/.upcode_version"
 
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
