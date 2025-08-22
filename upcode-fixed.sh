@@ -7,9 +7,9 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="1.0.1"
-VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  
-UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"  
+CURRENT_VERSION="2.0.1"
+VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"
+UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
 VERSION_FILE="$HOME/.upcode_version"
 
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
@@ -1232,10 +1232,28 @@ main() {
     # Mostrar banner de inicialização
     show_banner
     echo "🔄 Iniciando sistema..."
-    sleep 2
+    echo "📥 Baixando versão mais recente do servidor..."
     
-    # Verificar atualizações na inicialização
-    startup_check "$@"
+    # Sempre baixar e executar a versão mais recente
+    local temp_script=$(mktemp)
+    if curl -s --max-time 30 "$UPDATE_URL" -o "$temp_script" 2>/dev/null && [[ -s "$temp_script" ]]; then
+        if head -1 "$temp_script" | grep -q "#!/bin/bash"; then
+            # Backup da versão atual
+            cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
+            
+            # Substituir pela versão do servidor
+            cp "$temp_script" "$0" && chmod +x "$0"
+            rm -f "$temp_script"
+            
+            echo "✅ Versão atualizada baixada! Reiniciando..."
+            sleep 1
+            exec "$0" "$@"
+        fi
+    fi
+    
+    echo "⚠️ Usando versão local (sem conexão ou erro no download)"
+    rm -f "$temp_script"
+    sleep 2
     
     check_dependencies
     
