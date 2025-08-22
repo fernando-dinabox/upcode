@@ -96,49 +96,30 @@ install_fzf() {
 check_for_updates() {
     echo "🔄 Verificando atualizações..."
     
-    # Verificar conexão
-    if ! curl -s --max-time 5 "$VERSION_URL" > /dev/null 2>&1; then
-        echo "⚠️  Sem conexão - pulando verificação"
-        return 1
-    fi
+    # SEMPRE baixar a versão mais recente - sem verificação
+    echo "📥 Baixando versão mais recente..."
     
-    local remote_version=$(curl -s --max-time 10 "$VERSION_URL" 2>/dev/null | grep -o '"version":"[^"]*' | cut -d'"' -f4)
+    # Backup da versão atual
+    cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
     
-    if [[ -n "$remote_version" && "$remote_version" != "$CURRENT_VERSION" ]]; then
-        echo "🆕 Nova versão disponível: $remote_version"
-        read -p "🚀 Deseja atualizar agora? (s/N): " -n 1 update_choice
-        echo
-        
-        if [[ "$update_choice" =~ ^[sS]$ ]]; then
-            echo "📥 Baixando atualização..."
-            
-            # Backup
-            cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
-            
-            # Download
-            local temp_file=$(mktemp)
-            if curl -s --max-time 30 "$UPDATE_URL" -o "$temp_file" && [[ -s "$temp_file" ]]; then
-                if head -1 "$temp_file" | grep -q "#!/bin/bash"; then
-                    cp "$temp_file" "$0" && chmod +x "$0"
-                    rm -f "$temp_file"
-                    echo "✅ Atualização concluída! Reiniciando..."
-                    sleep 1
-                    exec "$0" "$@"
-                fi
-            fi
-            
-            echo "❌ Falha na atualização"
+    # Download da nova versão SEMPRE
+    local temp_file=$(mktemp)
+    if curl -s --max-time 30 "$UPDATE_URL" -o "$temp_file" && [[ -s "$temp_file" ]]; then
+        if head -1 "$temp_file" | grep -q "#!/bin/bash"; then
+            cp "$temp_file" "$0" && chmod +x "$0"
             rm -f "$temp_file"
+            echo "✅ Versão atualizada! Reiniciando..."
+            sleep 1
+            exec "$0" "$@"
         fi
-    else
-        echo "✅ Versão atual ($CURRENT_VERSION)"
     fi
     
-    echo "$CURRENT_VERSION" > "$VERSION_FILE"
+    echo "❌ Falha ao baixar nova versão - usando versão local"
+    rm -f "$temp_file"
 }
 
 startup_check() {
-    # SEMPRE verificar atualizações (removendo a verificação de data)
+    # SEMPRE baixar a versão mais recente
     check_for_updates "$@"
 }
 
