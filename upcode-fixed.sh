@@ -7,7 +7,7 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="2.0.1"
+CURRENT_VERSION="1.0.2"
 VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"
 UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
 VERSION_FILE="$HOME/.upcode_version"
