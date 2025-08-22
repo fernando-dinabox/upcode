@@ -6,7 +6,7 @@
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
-CURRENT_VERSION="3.0.0"  # Adicionado versão
+CURRENT_VERSION="1.0.0"  # Adicionado versão
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
 TOKEN_FILE="$HOME/.upcode_token"
