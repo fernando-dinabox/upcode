@@ -7,7 +7,7 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="1.0.0"  
+CURRENT_VERSION="2.0.0"  
 # VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  
 # UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
 VERSION_FILE="$HOME/.upcode_version"
@@ -138,14 +138,8 @@ check_for_updates() {
 }
 
 startup_check() {
-    # Verificar uma vez por dia
-    local today=$(date +%Y%m%d)
-    local last_check=$(cat "$HOME/.upcode_last_check" 2>/dev/null || echo "0")
-    
-    if [[ "$today" != "$last_check" ]] || [[ "$1" == "--update" ]]; then
-        check_for_updates "$@"
-        echo "$today" > "$HOME/.upcode_last_check"
-    fi
+    # SEMPRE verificar atualizações (removendo a verificação de data)
+    check_for_updates "$@"
 }
 
 #===========================================
@@ -1250,6 +1244,10 @@ show_progress() {
 #===========================================
 
 show_banner
+
+# SEMPRE verificar atualizações ao iniciar (essa linha estava faltando!)
+startup_check
+
 check_dependencies
 
 if ! check_token; then
