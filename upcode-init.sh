@@ -1,23 +1,29 @@
 #!/bin/bash
 # filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-init.sh
 
-echo "🚀 UPCODE - FORÇA TOTAL ANTI-CACHE"
+echo "🚀 UPCODE - Conectando ao servidor..."
 echo "📅 $(date '+%H:%M:%S')"
 
-# Combinar todos os métodos anti-cache
+# URL do script principal no servidor
+MAIN_SCRIPT_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"
+
+# Adicionar timestamp para evitar qualquer cache
 TIMESTAMP=$(date +%s%N)
-RANDOM1=$RANDOM
-RANDOM2=$RANDOM
-URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"
+RANDOM_ID=$RANDOM
 
-# Múltiplos cache busters
-FINAL_URL="${URL}?v=${TIMESTAMP}&r1=${RANDOM1}&r2=${RANDOM2}&nocache=true&bust=force"
+echo "📡 Baixando script principal do servidor..."
 
-echo "🔄 URL: ...upcode-fixed.sh?v=${TIMESTAMP}..."
-
+# Executar direto do servidor sem salvar arquivo
 curl -s \
     -H "Cache-Control: no-cache, no-store, must-revalidate" \
     -H "Pragma: no-cache" \
     -H "Expires: 0" \
-    -H "User-Agent: UPCODE-Fetcher-${TIMESTAMP}" \
-    "$FINAL_URL" | bash -s -- "$@"
+    "${MAIN_SCRIPT_URL}?v=${TIMESTAMP}&r=${RANDOM_ID}&nocache=true" | bash -s -- "$@"
+
+# Se curl falhar
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    echo "❌ Erro ao conectar com o servidor"
+    echo "🌐 URL: $MAIN_SCRIPT_URL"
+    echo "🔍 Verifique sua conexão com a internet"
+    exit 1
+fi
