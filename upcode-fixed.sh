@@ -7,10 +7,13 @@
 # CONFIGURAÇÕES
 #===========================================
 
-CURRENT_VERSION="2.0.0"  # Adicionado
-VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  # Adicionado
-UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"      # Adicionado
-VERSION_FILE="$HOME/.upcode_version"                            # Adicionado
+CURRENT_VERSION="2.0.0"  
+# VERSION_URL="https://db33.dev.dinabox.net/upcode-version.php"  
+# UPDATE_URL="https://db33.dev.dinabox.net/upcode-fixed.sh"
+VERSION_FILE="$HOME/.upcode_version"
+
+
+UPDATE_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"    
 
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
@@ -1230,99 +1233,36 @@ clean_data() {
 
 
 show_progress() {
-    local duration=$1
-    local message="$2"
-    local progress=0
-    local bar_length=30
+    local message="$1"
+    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local i=0
     
-    echo -n "$message "
-    
-    while [ $progress -le 100 ]; do
-        local filled=$((progress * bar_length / 100))
-        local empty=$((bar_length - filled))
-        
-        printf "\r$message ["
-        printf "%*s" $filled | tr ' ' '█'
-        printf "%*s" $empty | tr ' ' '░'
-        printf "] %d%%" $progress
-        
-        progress=$((progress + 2))
-        sleep 0.05
+    while [ $i -lt 20 ]; do
+        printf "\r%s %s" "$message" "${chars:$((i % ${#chars})):1}"
+        sleep 0.1
+        ((i++))
     done
-    echo
+    printf "\r%s ✅\n" "$message"
 }
 
 main() {
     # Banner
     show_banner
     
-    # Verificar versão do servidor
-    echo "🔄 Verificando versão do servidor..."
-    show_progress 2 "📡 Conectando"
+    # Sempre executar a versão do servidor
+    echo "🔄 Conectando ao servidor..."
+    show_progress "📡 Baixando versão mais recente"
     
-    local temp_script=$(mktemp)
-    local server_content=""
-    
-    # Tentar baixar versão do servidor
-    if server_content=$(curl -s --max-time 10 "$UPDATE_URL" 2>/dev/null) && [[ -n "$server_content" ]]; then
-        echo "$server_content" > "$temp_script"
-        
-        # Verificar se é um script válido
-        if head -1 "$temp_script" | grep -q "#!/bin/bash"; then
-            
-            # Comparar conteúdo
-            if [[ -f "$0" ]] && ! cmp -s "$0" "$temp_script"; then
-                echo "🆕 Nova versão detectada no servidor!"
-                show_progress 3 "📥 Baixando atualização"
-                
-                # Fazer backup
-                cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
-                
-                # Atualizar
-                show_progress 2 "🔄 Atualizando arquivo"
-                cp "$temp_script" "$0" && chmod +x "$0"
-                
-                echo "✅ Atualização concluída! Reiniciando..."
-                rm -f "$temp_script"
-                sleep 1
-                exec "$0" "$@"
-                
-            elif [[ -f "$0" ]]; then
-                echo "✅ Versão já está atualizada"
-                rm -f "$temp_script"
-                
-            else
-                echo "📥 Primeira instalação detectada"
-                show_progress 2 "🚀 Instalando"
-                cp "$temp_script" "$0" && chmod +x "$0"
-                rm -f "$temp_script"
-                exec "$0" "$@"
-            fi
-            
-        else
-            echo "❌ Arquivo do servidor inválido"
-            rm -f "$temp_script"
-            exit 1
-        fi
-        
+    # Executar diretamente do servidor sem salvar localmente
+    if curl -s --max-time 15 "$UPDATE_URL" | bash -s "$@"; then
+        exit 0
     else
         echo "❌ Falha ao conectar com o servidor"
         echo "🌐 Verifique sua conexão com a internet"
         echo "🔗 URL: $UPDATE_URL"
-        rm -f "$temp_script"
         exit 1
     fi
-    
-    # Se chegou aqui, continuar com o sistema
-    show_progress 1 "🚀 Iniciando sistema"
-    
-    check_dependencies
-    
-    if ! check_token; then
-        do_login
-    fi
-    
-    main_menu
 }
+
 # Executar com suporte a parâmetro --update
 main "$@"
