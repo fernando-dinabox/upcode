@@ -1,10 +1,11 @@
 #!/bin/bash
-# filepath: upcode-main.sh
+# filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-main.sh
 
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
 
+CURRENT_VERSION="1.0.0"  # Adicionado versão
 CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
 AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
 TOKEN_FILE="$HOME/.upcode_token"
@@ -21,40 +22,34 @@ declare -a selected_files=()
 FZF_DEFAULT_OPTS="--height=40% --border --margin=1 --color=fg:#f8f8f2,bg:#282a36,hl:#bd93f9"
 
 #===========================================
-# UTILITÁRIOS
+# BANNER E INTERFACE
 #===========================================
 
-# Verificar dependências
-check_dependencies() {
-    if ! command -v fzf &> /dev/null; then
-        echo "❌ Erro: fzf não encontrado"
-        echo "📦 Execute: sudo apt install fzf"
-        exit 1
-    fi
-}
-
-# Função para pausar
-pause() {
+show_banner() {
+    clear
+    echo "
+    ██╗   ██╗██████╗  ██████╗ ██████╗ ██████╗ ███████╗
+    ██║   ██║██╔══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝
+    ██║   ██║██████╔╝██║     ██║   ██║██║  ██║█████╗  
+    ██║   ██║██╔═══╝ ██║     ██║   ██║██║  ██║██╔══╝  
+    ╚██████╔╝██║     ╚██████╗╚██████╔╝██████╔╝███████╗
+     ╚═════╝ ╚═╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+    "
+    echo "    🚀 Sistema de upload arquivos via terminal. v$CURRENT_VERSION"
+    echo "    ═══════════════════════════════════════════════"
     echo
-    read -p "Pressione Enter para continuar..." </dev/tty
+    
+    # Aguardar 2 segundos
+    sleep 2
 }
 
-# Função para confirmação
-confirm() {
-    local message="$1"
-    read -p "$message (s/N): " -n 1 response </dev/tty
-    echo
-    [[ "$response" =~ ^[sS]$ ]]
-}
-
-# Limpar tela
+# Limpar tela (modificado para mostrar versão)
 clear_screen() {
     clear
-    echo "🚀 UPCODE - Sistema de Upload"
-    echo "═════════════════════════════"
+    echo "🚀 UPCODE v$CURRENT_VERSION - Sistema de Upload"
+    echo "═════════════════════════════════════════════════"
     echo
 }
-
 #===========================================
 # AUTENTICAÇÃO
 #===========================================
@@ -2602,10 +2597,12 @@ manual_sync() {
 #===========================================
 # MENU PRINCIPAL
 #===========================================
-# Menu principal
+
 main_menu() {
     while true; do
         clear_screen
+        echo "📡 Sistema ativo e conectado"  # Informativo adicional
+        echo
         
         # Verificar se há histórico
         local history_count=0
@@ -2613,10 +2610,23 @@ main_menu() {
             history_count=$(wc -l < "$HISTORY_FILE" 2>/dev/null || echo 0)
         fi
         
+        # Verificar status da sincronização
+        local sync_status="🔴 Inativa"
+        if is_sync_running; then
+            sync_status="🟢 Ativa"
+        fi
+        
+        # Mostrar informações de status
+        echo "📊 STATUS DO SISTEMA:"
+        echo "   📦 Versão: $CURRENT_VERSION"
+        echo "   🔄 Sincronização: $sync_status"
+        echo "   📝 Histórico: $history_count itens"
+        echo
+        
         # Criar opções do menu
         local menu_options=(
             "browser|📁 Navegador de Arquivos"
-            "sync|🔄 Sincronização de Pasta"
+            "sync|🔄 Sincronização de Pasta ($sync_status)"
             "quick|⚡ Upload Rápido (último item)"
             "history|📝 Histórico ($history_count itens)"
             "token|🔄 Renovar Token"
@@ -2627,8 +2637,8 @@ main_menu() {
         # Mostrar menu
         local choice=$(printf '%s\n' "${menu_options[@]}" | \
             sed 's/^[^|]*|//' | \
-            fzf --prompt="UPCODE > " \
-                --header="Sistema de Upload de Arquivos" \
+            fzf --prompt="UPCODE v$CURRENT_VERSION > " \
+                --header="Sistema de Upload de Arquivos - Selecione uma opção" \
                 --preview-window=hidden)
         
         # Encontrar a ação correspondente
@@ -2652,7 +2662,6 @@ main_menu() {
         [[ -z "$choice" ]] && { clear; exit 0; }
     done
 }
-
 # Limpar dados do sistema
 clean_data() {
     clear_screen
@@ -2733,7 +2742,8 @@ clean_data() {
 #===========================================
 
 
-show_banner
+
+show_banner  
 check_dependencies
 
 if ! check_token; then
