@@ -1,8 +1,10 @@
 #!/bin/bash
-# filepath: upcode-init.sh
 
-# URL do script principal (usando a URL raw correta)
-MAIN_SCRIPT_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"
+CACHE_FILE="$HOME/.upcode_cached.sh"
+SERVER_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-fixed.sh"
 
-# Baixar e executar o script principal
-curl -s "$MAIN_SCRIPT_URL" | bash
+# SEMPRE verificar e baixar a versão mais recente
+curl -s "$SERVER_URL" > "$CACHE_FILE" 2>/dev/null && chmod +x "$CACHE_FILE"
+
+# Executar versão baixada
+[[ -f "$CACHE_FILE" ]] && exec bash "$CACHE_FILE" "$@"
