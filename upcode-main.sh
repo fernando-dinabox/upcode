@@ -1,8 +1,5 @@
 #!/bin/bash
 # filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-fixed.sh
-# UPCODE - Sistema de Upload FUNCIONAL
-# Versão corrigida com upload real de estrutura de pastas
-
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
