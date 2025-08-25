@@ -2,7 +2,7 @@
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
-CURRENT_VERSION="1.0.1"
+CURRENT_VERSION="1.0.0"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode3/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
@@ -195,6 +195,279 @@ sync_log() {
 
 
 #===========================================
+# NAVEGAÇÃO REMOTA (SERVIDOR)
+#===========================================
+
+server_browser() {
+    local current_path=""
+    
+    while true; do
+        local token=""
+        if [[ -f "$TOKEN_FILE" ]]; then
+            token=$(cat "$TOKEN_FILE")
+        fi
+        
+        if [[ -z "$token" ]]; then
+            echo "❌ Token não encontrado"
+            pause
+            return
+        fi
+        
+        clear_screen
+        echo "🌐 Navegação no Servidor"
+        echo "========================"
+        
+        if [[ -z "$current_path" ]]; then
+            echo "📁 Suas Pastas Disponíveis (${#user_folders[@]} pastas)"
+        else
+            echo "📁 Navegando em: $current_path"
+        fi
+        echo "─────────────────────────────────"
+        echo
+        
+        # Arrays separados: um para exibição e outro para dados reais
+        local display_items=()  # Para mostrar no FZF (com ícones)
+        local data_items=()     # Para armazenar nomes reais (sem ícones)
+        local item_types=()     # Para identificar tipo de item: ROOT_FOLDER, SUB_FOLDER, FILE
+        
+        # Opção de voltar se não estiver na raiz
+        if [[ -n "$current_path" ]]; then
+            display_items+=("🔙 Voltar")
+            data_items+=("__VOLTAR__")
+            item_types+=("CONTROL")
+        fi
+        
+        if [[ -z "$current_path" ]]; then
+            # Mostrar pastas do usuário (raiz)
+            load_user_folders
+            
+            if [[ ${#user_folders[@]} -gt 0 ]]; then
+                for folder in "${user_folders[@]}"; do
+                    display_items+=("📂 $folder")
+                    data_items+=("$folder")
+                    item_types+=("ROOT_FOLDER")  # Pasta raiz do usuário
+                done
+            else
+                display_items+=("❌ Nenhuma pasta disponível")
+                data_items+=("__ERRO__")
+                item_types+=("CONTROL")
+            fi
+        else
+            # Explorar conteúdo de uma pasta específica
+            echo "🔧 DEBUG: Caminho enviado para API: '$current_path'"
+            
+            # CORREÇÃO: Limpar e normalizar o path antes de enviar
+            local clean_path="$current_path"
+            # Remover barras duplicadas
+            clean_path=$(echo "$clean_path" | sed 's|/\+|/|g')
+            # Remover barra inicial se existir
+            clean_path="${clean_path#/}"
+            # Remover barra final se existir
+            clean_path="${clean_path%/}"
+            
+            echo "🔧 DEBUG: Path normalizado: '$clean_path'"
+            
+            local response=$(curl -s -X POST "$CONFIG_URL" \
+                -H "Authorization: Bearer $token" \
+                -d "action=list" \
+                -d "path=$clean_path")
+            
+            echo "🔍 DEBUG: Resposta recebida: $(echo "$response" | head -c 200)..."
+            
+            if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+                local items_found=false
+                
+                # Extrair apenas os nomes dos arquivos/pastas
+                while IFS= read -r line; do
+                    if [[ "$line" =~ \"name\":[[:space:]]*\"([^\"]+)\" ]]; then
+                        local clean_name="${BASH_REMATCH[1]}"
+                        if [[ -n "$clean_name" ]]; then
+                            items_found=true
+                            
+                            # Verificar se é diretório
+                            if echo "$response" | grep -A3 -B3 "\"name\":[[:space:]]*\"$clean_name\"" | grep -q '"type":[[:space:]]*"directory"'; then
+                                display_items+=("📂 $clean_name")
+                                data_items+=("$clean_name")
+                                item_types+=("SUB_FOLDER")  # Subpasta dentro da pasta atual
+                            else
+                                # É arquivo - tentar extrair tamanho
+                                local size_info=$(echo "$response" | grep -A5 -B5 "\"name\":[[:space:]]*\"$clean_name\"" | grep -o '"size":[[:space:]]*[0-9]*' | head -1)
+                                if [[ -n "$size_info" ]]; then
+                                    local size=$(echo "$size_info" | sed 's/.*"size":[[:space:]]*\([0-9]*\).*/\1/')
+                                    if [[ "$size" -gt 1048576 ]]; then
+                                        display_items+=("📄 $clean_name ($(( size / 1048576 ))MB)")
+                                    elif [[ "$size" -gt 1024 ]]; then
+                                        display_items+=("📄 $clean_name ($(( size / 1024 ))KB)")
+                                    elif [[ "$size" -gt 0 ]]; then
+                                        display_items+=("📄 $clean_name (${size}B)")
+                                    else
+                                        display_items+=("📄 $clean_name")
+                                    fi
+                                else
+                                    display_items+=("📄 $clean_name")
+                                fi
+                                data_items+=("$clean_name")
+                                item_types+=("FILE")
+                            fi
+                        fi
+                    fi
+                done <<< "$response"
+                
+                if [[ "$items_found" == "false" ]]; then
+                    display_items+=("📁 Pasta vazia")
+                    data_items+=("__VAZIO__")
+                    item_types+=("CONTROL")
+                fi
+            else
+                local error_msg=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
+                display_items+=("❌ Erro: ${error_msg:-"Falha na requisição"}")
+                data_items+=("__ERRO__")
+                item_types+=("CONTROL")
+            fi
+        fi
+        
+        # Opções de controle - adicionar separador se houver itens
+        if [[ ${#display_items[@]} -gt 0 ]]; then
+            # Adicionar pastas raiz disponíveis quando não estamos na raiz
+            if [[ -n "$current_path" ]]; then
+                display_items+=("")
+                data_items+=("__SEPARADOR__")
+                item_types+=("CONTROL")
+                
+                display_items+=("--- [📁 NAVEGAR PARA OUTRAS PASTAS] ---")
+                data_items+=("__HEADER__")
+                item_types+=("CONTROL")
+                
+                # Mostrar outras pastas disponíveis para navegação rápida
+                for folder in "${user_folders[@]}"; do
+                    # Não mostrar a pasta atual
+                    if [[ "$folder" != "${current_path%%/*}" ]]; then
+                        display_items+=("🏠 $folder")
+                        data_items+=("$folder")
+                        item_types+=("ROOT_FOLDER")
+                    fi
+                done
+            fi
+        fi
+        
+        display_items+=("")
+        data_items+=("__SEPARADOR__")
+        item_types+=("CONTROL")
+        
+        display_items+=("🔄 Atualizar")
+        data_items+=("__ATUALIZAR__")
+        item_types+=("CONTROL")
+        
+        if [[ -n "$current_path" ]]; then
+            display_items+=("🏠 Voltar às Pastas Disponíveis")
+            data_items+=("__HOME__")
+            item_types+=("CONTROL")
+        fi
+        
+        display_items+=("🔍 Navegar por Texto")
+        data_items+=("__TEXTO__")
+        item_types+=("CONTROL")
+        
+        display_items+=("❌ Sair")
+        data_items+=("__SAIR__")
+        item_types+=("CONTROL")
+        
+        # Mostrar no FZF
+        local choice=$(printf '%s\n' "${display_items[@]}" | \
+            fzf --prompt="$(if [[ -z "$current_path" ]]; then echo "Pastas > "; else echo "$(basename "$current_path") > "; fi)" \
+                --header="Navegação no servidor" \
+                --height=20)
+        
+        [[ -z "$choice" ]] && return
+        
+        # Encontrar o índice da escolha para pegar o nome real e tipo
+        local selected_index=-1
+        for i in "${!display_items[@]}"; do
+            if [[ "${display_items[$i]}" == "$choice" ]]; then
+                selected_index=$i
+                break
+            fi
+        done
+        
+        if [[ $selected_index -eq -1 ]]; then
+            continue  # Escolha não encontrada, continua loop
+        fi
+        
+        local real_name="${data_items[$selected_index]}"
+        local item_type="${item_types[$selected_index]}"
+        
+        echo "🔧 DEBUG: Escolha='$choice', Nome='$real_name', Tipo='$item_type'"
+        
+        # Processar escolha baseada no nome real E tipo
+        case "$real_name" in
+            "__VOLTAR__")
+                # Voltar um nível - controle correto de caminhos
+                if [[ "$current_path" == */* ]]; then
+                    current_path="${current_path%/*}"  # Remove último componente
+                    if [[ -z "$current_path" ]]; then
+                        current_path=""  # Se ficou vazio, vai para raiz
+                    fi
+                else
+                    current_path=""  # Já estava no primeiro nível
+                fi
+                echo "🔧 DEBUG: Voltando para: '$current_path'"
+                ;;
+            "__HOME__")
+                current_path=""
+                echo "🔧 DEBUG: Voltando à raiz"
+                ;;
+            "__TEXTO__")
+                echo
+                read -p "Caminho (ex: fernando-teste/subpasta): " user_path </dev/tty
+                if [[ -n "$user_path" ]]; then
+                    # Limpar path do usuário
+                    user_path="${user_path#/}"  # Remove barra inicial
+                    user_path="${user_path%/}"  # Remove barra final
+                    current_path="$user_path"
+                    echo "🔧 DEBUG: Caminho manual definido: '$current_path'"
+                fi
+                ;;
+            "__ATUALIZAR__"|"__SEPARADOR__"|"__HEADER__")
+                # Apenas continua o loop
+                ;;
+            "__SAIR__")
+                return
+                ;;
+            "__VAZIO__"|"__ERRO__")
+                # Ignorar
+                ;;
+            *)
+                # Navegação baseada no TIPO do item
+                case "$item_type" in
+                    "ROOT_FOLDER")
+                        # Navegação para pasta raiz - RESETAR caminho
+                        current_path="$real_name"
+                        echo "🔧 DEBUG: Navegando para pasta raiz: '$current_path'"
+                        ;;
+                    "SUB_FOLDER")
+                        # Navegação para subpasta - CONCATENAR ao caminho atual
+                        if [[ -z "$current_path" ]]; then
+                            current_path="$real_name"
+                        else
+                            current_path="$current_path/$real_name"
+                        fi
+                        echo "🔧 DEBUG: Navegando para subpasta: '$current_path'"
+                        ;;
+                    "FILE")
+                        echo "📄 Arquivo selecionado: $real_name"
+                        echo "📁 Localizado em: $current_path"
+                        pause
+                        ;;
+                    *)
+                        echo "⚠️ Tipo de item desconhecido: $item_type"
+                        ;;
+                esac
+                ;;
+        esac
+    done
+}
+
+#===========================================
 # AUTENTICAÇÃO
 #===========================================
 
@@ -237,6 +510,7 @@ do_login() {
     
     echo "🔍 Debug - Resposta do servidor:"
     echo "$response" | head -10
+    # sleep 3
     echo
     
     # Extrair token
@@ -335,11 +609,13 @@ confirm_delete_option() {
 
 
 
-# Modificar load_user_info para incluir can_delete
 load_user_info() {
     if [[ -f "$USER_INFO_FILE" ]]; then
         source "$USER_INFO_FILE"
-        echo "👤 Usuário carregado: $USER_DISPLAY_NAME ($USER_NICENAME)"
+        # Só mostrar mensagem se não for chamado silenciosamente
+        if [[ "$1" != "silent" ]]; then
+            echo "👤 Usuário carregado: $USER_DISPLAY_NAME ($USER_NICENAME)"
+        fi
     else
         USER_DISPLAY_NAME=""
         USER_NICENAME=""
@@ -452,7 +728,6 @@ renew_token() {
 #===========================================
 # NAVEGAÇÃO DE ARQUIVOS
 #===========================================
-
 file_browser() {
     local current_dir="${1:-$HOME}"
     
@@ -475,7 +750,8 @@ file_browser() {
         fi
         
         items+=("")
-        items+=("UPLOAD_CURRENT||📤 ENVIAR ESTA PASTA: $(basename "$current_dir")")
+        items+=("UPLOAD_FOLDER_AS_STRUCTURE||📦 ENVIAR PASTA COMPLETA: $(basename "$current_dir")")
+        items+=("UPLOAD_CURRENT||📤 ENVIAR CONTEÚDO DA PASTA: $(basename "$current_dir")")
         items+=("SYNC_CURRENT||🔄 SINCRONIZAR ESTA PASTA: $(basename "$current_dir")")
         items+=("")
         items+=("--- [📤 CONTEÚDO ATUAL] ---")
@@ -509,12 +785,12 @@ file_browser() {
         items+=("BACK||🔙 Voltar ao menu principal")
         
         echo "📊 Encontrados: $dir_count pastas, $file_count arquivos"
-        echo
-        
+
         local choice=$(printf '%s\n' "${items[@]}" | \
             sed 's/^[^|]*|[^|]*|//' | \
             fzf --prompt="📁 $(basename "$current_dir") > " \
-                --header="Enter = Navegar/Selecionar | Esc = Voltar")
+                --header="Enter = Navegar/Selecionar | Esc = Voltar" \
+                --height=25)
         
         [[ -z "$choice" ]] && return
         
@@ -530,17 +806,17 @@ file_browser() {
         local path=$(echo "$selected_line" | cut -d'|' -f2)
         
         case "$action" in
-            "..")
-                current_dir=$(dirname "$current_dir")
-                ;;
             "DIR")
                 current_dir="$path"
                 ;;
             "FILE")
                 upload_single_file "$path"
                 ;;
+            "UPLOAD_FOLDER_AS_STRUCTURE")
+                upload_folder_as_complete_structure "$current_dir"
+                ;;
             "UPLOAD_CURRENT")
-                upload_folder_complete "$current_dir"
+                upload_folder_content_only "$current_dir"
                 ;;
             "SYNC_CURRENT")
                 setup_sync_for_folder "$current_dir"
@@ -561,6 +837,171 @@ file_browser() {
                 ;;
         esac
     done
+}
+
+
+upload_folder_as_complete_structure() {
+    local pasta_local="$1"
+    local pasta_name=$(basename "$pasta_local")
+    
+    if [[ ! -d "$pasta_local" ]]; then
+        echo "❌ Pasta não encontrada: $pasta_local"
+        pause
+        return 1
+    fi
+    
+    # Garantir login válido
+    ensure_valid_login
+    
+    clear_screen
+    echo "📦 UPLOAD DE PASTA COMPLETA (COM ESTRUTURA)"
+    echo "==========================================="
+    echo
+    echo "📁 Pasta selecionada: '$pasta_name'"
+    echo "📂 Caminho completo: $pasta_local"
+    
+    # Contar arquivos
+    local total_files=$(find "$pasta_local" -type f 2>/dev/null | wc -l)
+    echo "📊 Total de arquivos encontrados: $total_files"
+    
+    if [[ $total_files -eq 0 ]]; then
+        echo "⚠️ Nenhum arquivo encontrado na pasta"
+        pause
+        return 1
+    fi
+    
+    # Mostrar estrutura
+    echo
+    echo "🌳 Estrutura que será criada no servidor:"
+    echo "   📂 $pasta_name/"
+    find "$pasta_local" -type f 2>/dev/null | head -15 | while read -r arquivo; do
+        local rel_path="${arquivo#$pasta_local/}"
+        echo "   📂 $pasta_name/$rel_path"
+    done
+    
+    if [[ $total_files -gt 15 ]]; then
+        echo "   📂 $pasta_name/... e mais $((total_files - 15)) arquivos"
+    fi
+    
+    echo
+    echo "📁 Pastas disponíveis no servidor:"
+    printf '   📂 %s\n' "${user_folders[@]}"
+    echo
+    
+    # Selecionar pasta de destino
+    local pasta_destino=$(printf '%s\n' "${user_folders[@]}" | \
+        fzf --prompt="Pasta destino > " \
+            --header="Onde criar a pasta '$pasta_name' no servidor")
+    
+    [[ -z "$pasta_destino" ]] && return
+    
+    # Verificar opção de exclusão
+    local with_delete=false
+    if confirm_delete_option "pasta completa"; then
+        with_delete=true
+    fi
+    
+    echo
+    echo "📋 RESUMO DA OPERAÇÃO:"
+    echo "  📂 Pasta local: $pasta_name"
+    echo "  📁 Será criada em: $pasta_destino/$pasta_name/"
+    echo "  📊 Total de arquivos: $total_files"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  🗑️ Exclusão prévia: SIM (na pasta $pasta_destino/$pasta_name/)"
+    else
+        echo "  🗑️ Exclusão prévia: NÃO"  
+    fi
+    echo
+    echo "💡 RESULTADO: Será criada a estrutura '$pasta_destino/$pasta_name/...' no servidor"
+    
+    if confirm "📦 Iniciar upload da pasta completa?"; then
+        upload_pasta_completa "$pasta_local" "$pasta_destino" "$pasta_name" "$with_delete"
+    fi
+}
+
+
+upload_folder_content_only() {
+    local pasta_local="$1"
+    
+    if [[ ! -d "$pasta_local" ]]; then
+        echo "❌ Pasta não encontrada: $pasta_local"
+        pause
+        return 1
+    fi
+    
+    # Garantir login válido
+    ensure_valid_login
+    
+    clear_screen
+    echo "📤 UPLOAD DO CONTEÚDO DA PASTA"
+    echo "=============================="
+    echo
+    echo "📁 Enviando conteúdo de: '$(basename "$pasta_local")'"
+    echo "📂 Caminho: $pasta_local"
+    
+    # Contar arquivos
+    local total_files=$(find "$pasta_local" -type f 2>/dev/null | wc -l)
+    echo "📊 Total de arquivos encontrados: $total_files"
+    
+    if [[ $total_files -eq 0 ]]; then
+        echo "⚠️ Nenhum arquivo encontrado na pasta"
+        pause
+        return 1
+    fi
+    
+    # Mostrar estrutura
+    echo
+    echo "🌳 Arquivos que serão enviados:"
+    find "$pasta_local" -type f 2>/dev/null | head -20 | while read -r arquivo; do
+        local rel_path="${arquivo#$pasta_local/}"
+        echo "  📄 $rel_path"
+    done
+    
+    if [[ $total_files -gt 20 ]]; then
+        echo "  ... e mais $((total_files - 20)) arquivos"
+    fi
+    
+    echo
+    echo "📁 Pastas disponíveis no servidor:"
+    printf '   📂 %s\n' "${user_folders[@]}"
+    echo
+    
+    # Selecionar pasta de destino
+    local pasta_destino=$(printf '%s\n' "${user_folders[@]}" | \
+        fzf --prompt="Pasta destino > " \
+            --header="Onde enviar o conteúdo (sem criar pasta)")
+    
+    [[ -z "$pasta_destino" ]] && return
+    
+    # Perguntar por subpasta (opcional)
+    echo
+    read -p "Subpasta de destino (opcional, deixe vazio para raiz): " subpasta
+    
+    # Verificar opção de exclusão
+    local with_delete=false
+    if confirm_delete_option "conteúdo"; then
+        with_delete=true
+    fi
+    
+    echo
+    echo "📋 RESUMO DA OPERAÇÃO:"
+    echo "  📂 Pasta local: $(basename "$pasta_local")"
+    echo "  🎯 Destino direto: $pasta_destino"
+    if [[ -n "$subpasta" ]]; then
+        echo "  📁 Subpasta: $subpasta"
+    fi
+    echo "  📊 Total: $total_files arquivos"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  🗑️ Exclusão prévia: SIM"
+    else
+        echo "  🗑️ Exclusão prévia: NÃO"  
+    fi
+    echo
+    echo "💡 RESULTADO: Arquivos serão colocados diretamente em '$pasta_destino'"
+    
+    if confirm "📤 Iniciar upload do conteúdo?"; then
+        upload_pasta_completa "$pasta_local" "$pasta_destino" "$subpasta" "$with_delete"
+    fi
 }
 
 show_upload_history() {
@@ -656,21 +1097,21 @@ upload_single_file() {
     
     [[ -z "$folder" ]] && return
     
-    # Verificar opção de exclusão
-    local with_delete=false
-    if confirm_delete_option "arquivo"; then
-        with_delete=true
-    fi
+    # # Verificar opção de exclusão
+    # local with_delete=false
+    # if confirm_delete_option "arquivo"; then
+    #     with_delete=true
+    # fi
     
-    echo
-    echo "📋 Resumo:"
-    echo "  📄 Arquivo: $(basename "$file")"
-    echo "  📁 Destino: $folder"
-    if [[ "$with_delete" == "true" ]]; then
-        echo "  🗑️ Exclusão prévia: SIM"
-    else
-        echo "  🗑️ Exclusão prévia: NÃO"
-    fi
+    # echo
+    # echo "📋 Resumo:"
+    # echo "  📄 Arquivo: $(basename "$file")"
+    # echo "  📁 Destino: $folder"
+    # if [[ "$with_delete" == "true" ]]; then
+    #     echo "  🗑️ Exclusão prévia: SIM"
+    # else
+    #     echo "  🗑️ Exclusão prévia: NÃO"
+    # fi
     
     if confirm "Confirmar upload?"; then
         if perform_upload "$file" "$folder" "$with_delete"; then
@@ -679,6 +1120,26 @@ upload_single_file() {
     fi
 }
 
+quick_upload() {
+    if [[ ! -f "$HISTORY_FILE" ]] || [[ ! -s "$HISTORY_FILE" ]]; then
+        echo "📝 Histórico vazio - use o navegador de arquivos primeiro"
+        pause
+        return
+    fi
+    
+    local last_item=$(tail -n 1 "$HISTORY_FILE")
+    local item_type=$(echo "$last_item" | cut -d'|' -f1)
+    local item_path=$(echo "$last_item" | cut -d'|' -f2)
+    
+    if [[ "$item_type" == "file" && -f "$item_path" ]]; then
+        upload_single_file "$item_path"
+    elif [[ "$item_type" == "folder" && -d "$item_path" ]]; then
+        upload_folder_complete "$item_path"
+    else
+        echo "❌ Último item não está mais disponível"
+        pause
+    fi
+}
 
 upload_folder_complete() {
     local pasta_local="$1"
@@ -758,6 +1219,7 @@ upload_folder_complete() {
         upload_pasta_completa "$pasta_local" "$pasta_destino" "$subpasta" "$with_delete"
     fi
 }
+
 upload_pasta_completa() {
     local pasta_local="$1"
     local pasta_destino="$2"
@@ -788,102 +1250,225 @@ upload_pasta_completa() {
     local error_count=0
     local delete_applied=false
     
+    # Arrays para armazenar detalhes dos erros
+    local error_files=()
+    local error_details=()
+    
     # Criar array com todos os arquivos primeiro
     local files_array=()
     while IFS= read -r -d '' arquivo; do
         files_array+=("$arquivo")
     done < <(find "$pasta_local" -type f -print0 2>/dev/null)
     
+    echo "📊 Total de arquivos a processar: ${#files_array[@]}"
+    echo
+    
     # Upload de cada arquivo mantendo a estrutura
     for arquivo in "${files_array[@]}"; do
-        # Calcular caminho relativo
-        local rel_path=""
-        if command -v realpath >/dev/null 2>&1; then
-            rel_path=$(realpath --relative-to="$pasta_local" "$arquivo" 2>/dev/null || echo "${arquivo#$pasta_local/}")
-        else
-            # Fallback para sistemas sem realpath
-            rel_path="${arquivo#$pasta_local/}"
-            rel_path="${rel_path#/}"  # Remove barra inicial se existir
-        fi
-        
-        # Adicionar subpasta se especificada
-        local dest_path="$rel_path"
+ local dest_path="$rel_path"
         if [[ -n "$subpasta" ]]; then
             dest_path="$subpasta/$rel_path"
         fi
         
-        echo "📤 Enviando: $rel_path -> $dest_path"
+        # CORREÇÃO: Normalizar dest_path antes de enviar
+        # Remover barras duplicadas
+        dest_path=$(echo "$dest_path" | sed 's|/\+|/|g')
+        # Remover barra inicial se existir
+        dest_path="${dest_path#/}"
+        # Remover barra final se existir  
+        dest_path="${dest_path%/}"
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📤 ENVIANDO ARQUIVO $((upload_count + 1))/${#files_array[@]}"
+        echo "📄 Arquivo local: $(basename "$arquivo")"
+        echo "📁 Caminho relativo: $rel_path"
+        echo "🎯 Destino normalizado: $dest_path"
+        echo "💾 Tamanho: $(du -sh "$arquivo" 2>/dev/null | cut -f1 || echo "N/A")"
         
         # Corrigir caminho para curl (Windows/WSL)
         local corrected_file="$arquivo"
         if [[ -d "/c/Windows" ]] && [[ ! -d "/mnt/c" ]]; then
             if [[ "$arquivo" =~ ^/c/ ]]; then
                 corrected_file=$(echo "$arquivo" | sed 's|^/c|C:|')
+                echo "🔧 Caminho corrigido para Windows: $corrected_file"
             fi
         fi
         
-        # Construir comando curl
+        # Construir comando curl com path normalizado
         local curl_cmd=(
             curl -s -X POST "$CONFIG_URL"
             -H "Authorization: Bearer $token"
             -F "arquivo[]=@$corrected_file"
             -F "pasta=$pasta_destino"
-            -F "path=$dest_path"
         )
         
+        # Adicionar path apenas se não estiver vazio
+        if [[ -n "$dest_path" && "$dest_path" != "." ]]; then
+            curl_cmd+=(-F "path=$dest_path")
+        fi
         # Aplicar with_delete apenas no PRIMEIRO arquivo
         if [[ "$with_delete" == "true" && "$delete_applied" == "false" ]]; then
             curl_cmd+=(-F "with_delete=true")
             delete_applied=true
-            echo "  🗑️ Aplicando exclusão prévia neste primeiro envio..."
+            echo "🗑️ APLICANDO exclusão prévia neste primeiro envio"
         fi
         
-        # Upload do arquivo
+        # Mostrar comando curl completo (mascarando token sensível)
+        echo
+        echo "🔧 COMANDO CURL EXECUTADO:"
+        local masked_cmd=()
+        for param in "${curl_cmd[@]}"; do
+            if [[ "$param" == *"Authorization: Bearer"* ]]; then
+                masked_cmd+=("Authorization: Bearer ${token:0:10}...***")
+            elif [[ "$param" == *"@"* ]]; then
+                masked_cmd+=("arquivo[]=@$(basename "${param#*@}")")
+            else
+                masked_cmd+=('"'"$param"'"')
+            fi
+        done
+        printf '   %s \\\n' "${masked_cmd[@]}"
+        echo
+        
+        # Executar upload com timeout
+        echo "⏳ Executando upload..."
+        local start_time=$(date +%s)
         local response=$("${curl_cmd[@]}" 2>&1)
+        local curl_exit=$?
+        local end_time=$(date +%s)
+        local duration=$((end_time - start_time))
         
         ((upload_count++))
         
-        # Verificar resultado
-        if echo "$response" | grep -q '"success":[[:space:]]*true'; then
-            echo "  ✅ Sucesso"
-            ((success_count++))
-        else
-            echo "  ❌ Erro"
+        echo "⌛ Tempo de upload: ${duration}s"
+        echo "🔍 Exit code curl: $curl_exit"
+        
+        # Análise detalhada da resposta
+        echo
+        echo "📋 ANÁLISE DA RESPOSTA:"
+        echo "─────────────────────────"
+        
+        if [[ $curl_exit -ne 0 ]]; then
+            echo "❌ ERRO CURL (Exit Code: $curl_exit)"
+            case $curl_exit in
+                6) echo "   💥 Não conseguiu resolver o hostname" ;;
+                7) echo "   🔌 Falha na conexão" ;;
+                28) echo "   ⏰ Timeout da operação" ;;
+                35) echo "   🔒 Erro SSL/TLS" ;;
+                56) echo "   📡 Falha ao receber dados da rede" ;;
+                *) echo "   ❓ Erro desconhecido" ;;
+            esac
+            echo "   📄 Resposta bruta: ${response:0:200}..."
+            error_files+=("$(basename "$arquivo")")
+            error_details+=("CURL_ERROR_$curl_exit: ${response:0:100}")
             ((error_count++))
+            continue
+        fi
+        
+        # Verificar se a resposta parece ser JSON
+        if [[ "$response" =~ ^\{.*\}$ ]] || [[ "$response" =~ ^\[.*\]$ ]]; then
+            echo "✅ Resposta é JSON válido"
             
-            # Mostrar erro se for o primeiro
-            if [[ $error_count -eq 1 ]]; then
-                local error_msg=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null)
-                if [[ -n "$error_msg" ]]; then
-                    echo "     Erro: $error_msg"
-                else
-                    echo "     Resposta: ${response:0:100}..."
+            # Extrair informações específicas do JSON
+            local success_status=$(echo "$response" | grep -o '"success":[[:space:]]*[^,}]*' | sed 's/.*"success":[[:space:]]*\([^,}]*\).*/\1/')
+            local message=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
+            local requested_folder=$(echo "$response" | grep -o '"requested_folder":[[:space:]]*"[^"]*"' | sed 's/.*"requested_folder":[[:space:]]*"\([^"]*\)".*/\1/')
+            
+            echo "   🎯 Status success: ${success_status:-"não encontrado"}"
+            echo "   💬 Mensagem: ${message:-"não encontrada"}"
+            echo "   📁 Pasta solicitada: ${requested_folder:-"não encontrada"}"
+            
+            # Verificar se há debug info
+            if echo "$response" | grep -q '"debug"'; then
+                echo "   🔍 Resposta contém informações de debug"
+                local available_folders=$(echo "$response" | sed -n '/"available_folders"/,/\]/p' | tr '\n' ' ')
+                if [[ -n "$available_folders" ]]; then
+                    echo "   📂 Pastas disponíveis encontradas no debug"
                 fi
             fi
+            
+        else
+            echo "⚠️ Resposta NÃO é JSON"
+            echo "   📄 Tipo de conteúdo: $(echo "$response" | head -c 50)..."
+        fi
+        
+        # Verificar resultado final
+        if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+            echo
+            echo "🎉 ✅ SUCESSO - Arquivo enviado com êxito!"
+            ((success_count++))
+        else
+            echo
+            echo "💥 ❌ FALHA - Arquivo não foi enviado"
+            
+            # Tentar extrair mensagem de erro mais específica
+            local error_message=""
+            if echo "$response" | grep -q '"message"'; then
+                error_message=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
+            fi
+            
+            if [[ -n "$error_message" ]]; then
+                echo "   📝 Erro reportado: $error_message"
+                error_files+=("$(basename "$arquivo")")
+                error_details+=("$error_message")
+            else
+                echo "   📄 Resposta completa (primeiros 500 chars):"
+                echo "   ${response:0:500}"
+                error_files+=("$(basename "$arquivo")")
+                error_details+=("Resposta: ${response:0:200}")
+            fi
+            
+            ((error_count++))
         fi
         
         # Pequena pausa para não sobrecarregar o servidor
-        sleep 0.1
+        echo "⏸️ Pausa de 0.2s..."
+        sleep 0.2
+        echo
     done
     
+    # Resumo final detalhado
     echo
-    echo "📊 RESUMO DO UPLOAD"
-    echo "==================="
-    echo "📁 Pasta local: $pasta_local"
-    echo "📁 Destino: $pasta_destino"
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║                           📊 RESUMO FINAL DETALHADO                   ║"
+    echo "╠══════════════════════════════════════════════════════════════════════╣"
+    echo "║ 📁 Pasta local: $pasta_local"
+    echo "║ 🎯 Destino: $pasta_destino"
     if [[ -n "$subpasta" ]]; then
-        echo "📁 Subpasta: $subpasta"
+        echo "║ 📂 Subpasta: $subpasta"
     fi
     if [[ "$with_delete" == "true" ]]; then
-        echo "🗑️ Exclusão prévia: APLICADA"
+        echo "║ 🗑️ Exclusão prévia: APLICADA"
     fi
-    echo "✅ Sucessos: $success_count"
-    echo "❌ Erros: $error_count"
-    echo "📊 Total: $upload_count"
+    echo "║ ✅ Sucessos: $success_count"
+    echo "║ ❌ Erros: $error_count" 
+    echo "║ 📊 Total processado: $upload_count"
+    echo "║ 📈 Taxa de sucesso: $(( success_count * 100 / upload_count ))%"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+    
+    # Mostrar detalhes dos erros se houver
+    if [[ $error_count -gt 0 ]]; then
+        echo
+        echo "🚨 DETALHES DOS ERROS:"
+        echo "════════════════════════"
+        for i in "${!error_files[@]}"; do
+            echo "❌ Arquivo $((i+1)): ${error_files[$i]}"
+            echo "   💬 Erro: ${error_details[$i]}"
+            echo
+        done
+        
+        echo "🔧 SUGESTÕES PARA RESOLVER ERROS:"
+        echo "• Verificar se a pasta de destino existe e está acessível"
+        echo "• Confirmar se o token ainda é válido (tentar renovar)"
+        echo "• Verificar conectividade de rede"
+        echo "• Verificar se os nomes de arquivo contêm caracteres especiais"
+        echo "• Tentar upload individual dos arquivos que falharam"
+    fi
     
     if [[ $success_count -gt 0 ]]; then
         add_to_history "$pasta_local" "folder" "$pasta_destino"
-        echo "✅ Upload concluído!"
+        echo "🎉 Upload de pasta concluído com $success_count sucessos!"
+    else
+        echo "💥 Nenhum arquivo foi enviado com sucesso"
     fi
     
     pause
@@ -918,13 +1503,25 @@ perform_upload() {
     fi
     
     local filename=$(basename "$corrected_file")
-    echo "🔄 Enviando $filename..."
+    echo "🔄 Enviando $filename para pasta: $folder"
     
-    # Construir comando curl
+    echo
+    echo "🔧 COMANDO CURL DETALHADO:"
+    echo "─────────────────────────"
+    echo "  📡 URL: $CONFIG_URL"
+    echo "  🔑 Token: ${token:0:20}..."
+    echo "  📄 Arquivo: $filename"
+    echo "  📁 Pasta destino: $folder"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  🗑️ Com exclusão prévia: SIM"
+    else
+        echo "  🗑️ Com exclusão prévia: NÃO"
+    fi
+    
+    # Construir comando curl IGUAL ao test_upload_file.sh
     local curl_cmd=(
-        curl -s -X POST
+        curl -s -X POST "$CONFIG_URL"
         -H "Authorization: Bearer $token"
-        -F "action=upload"
         -F "arquivo[]=@$corrected_file"
         -F "pasta=$folder"
     )
@@ -932,33 +1529,94 @@ perform_upload() {
     # Adicionar with_delete se necessário
     if [[ "$with_delete" == "true" ]]; then
         curl_cmd+=(-F "with_delete=true")
-        echo "🗑️ Solicitando exclusão prévia dos arquivos existentes..."
     fi
     
-    curl_cmd+=("$CONFIG_URL")
+    # Mostrar comando curl mascarado
+    echo
+    echo "🔍 PARÂMETROS ENVIADOS:"
+    echo "  -H \"Authorization: Bearer ${token:0:10}...***\""
+    echo "  -F \"arquivo[]=@$filename\""
+    echo "  -F \"pasta=$folder\""
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  -F \"with_delete=true\""
+    fi
+    echo
     
     # Executar upload
+    echo "⏳ Executando upload..."
+    local start_time=$(date +%s)
     local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
     
-    if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q -E "(success|enviados com sucesso|upload.*sucesso)"; then
-        echo "✅ $filename - Upload realizado com sucesso!"
+    echo "⌛ Tempo de execução: ${duration}s"
+    echo "🔍 Exit code: $curl_exit"
+    
+    # Análise detalhada da resposta
+    echo
+    echo "📋 ANÁLISE DA RESPOSTA:"
+    echo "─────────────────────"
+    
+    if [[ $curl_exit -ne 0 ]]; then
+        echo "❌ ERRO CURL (Exit Code: $curl_exit)"
+        case $curl_exit in
+            6) echo "   💥 Não conseguiu resolver hostname" ;;
+            7) echo "   🔌 Falha na conexão" ;;
+            28) echo "   ⏰ Timeout da operação" ;;
+            35) echo "   🔒 Erro SSL/TLS" ;;
+            *) echo "   ❓ Erro desconhecido ($curl_exit)" ;;
+        esac
+        echo "   📄 Resposta: ${response:0:200}..."
+        pause
+        return 1
+    fi
+    
+    # Verificar se é JSON válido
+    if [[ "$response" =~ ^\{.*\}$ ]] || [[ "$response" =~ ^\[.*\]$ ]]; then
+        echo "✅ Resposta é JSON válido"
+        
+        # Extrair informações do JSON
+        local success_status=$(echo "$response" | grep -o '"success":[[:space:]]*[^,}]*' | sed 's/.*"success":[[:space:]]*\([^,}]*\).*/\1/')
+        local message=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
+        
+        echo "   🎯 Status: ${success_status:-"não encontrado"}"
+        echo "   💬 Mensagem: ${message:-"não encontrada"}"
+        
+        # Mostrar resposta completa para debug
+        echo
+        echo "📄 RESPOSTA COMPLETA:"
+        echo "─────────────────────"
+        echo "$response" | head -20
+        
+    else
+        echo "⚠️ Resposta NÃO é JSON válido"
+        echo "   📄 Conteúdo: $(echo "$response" | head -c 100)..."
+    fi
+    
+    # Verificar sucesso final
+    echo
+    if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+        echo "🎉 ✅ SUCESSO - $filename enviado com êxito!"
         if [[ "$with_delete" == "true" ]]; then
             echo "🗑️ Arquivos antigos foram removidos do destino"
         fi
+        echo "📁 Arquivo enviado para: $folder"
         return 0
     else
-        echo "❌ $filename - Falha no upload"
-        if [[ $curl_exit -ne 0 ]]; then
-            echo "   Erro curl: $curl_exit"
+        echo "💥 ❌ FALHA - $filename não foi enviado"
+        
+        # Tentar extrair erro específico
+        local error_msg=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
+        if [[ -n "$error_msg" ]]; then
+            echo "   📝 Erro: $error_msg"
         fi
-        echo "   Resposta: $response"
+        
+        echo
+        pause
+        return 1
     fi
-    
-    pause
-    return 1
 }
-
 
 # Função para upload de pasta completa preservando estrutura
 perform_complete_folder_upload() {
@@ -2018,12 +2676,14 @@ main_menu() {
         local menu_options=(
             "browser|📁 Navegador de Arquivos"
             "quick|⚡ Upload Rápido (último item)"
+            "server|🌐 Ver Pastas Disponíveis"
             "sync|🔄 Sincronização de Pasta ($sync_status)"
             "history|📝 Histórico ($history_count itens)"
             "token|🔄 Renovar Token"
             "clean|🧹 Limpar Dados"
             "exit|❌ Sair"
         )
+        
         
         # Mostrar menu
         local choice=$(printf '%s\n' "${menu_options[@]}" | \
@@ -2038,6 +2698,7 @@ main_menu() {
                 local action=$(echo "$option" | cut -d'|' -f1)
                 case "$action" in
                     "browser") file_browser ;;
+                    "server") server_browser ;;
                     "sync") sync_menu ;;
                     "quick") quick_upload ;;
                     "history") show_upload_history ;;
@@ -2049,11 +2710,11 @@ main_menu() {
             fi
         done
         
+        
         # Se não encontrou correspondência e choice está vazio, sair
         [[ -z "$choice" ]] && { clear; exit 0; }
     done
 }
-
 
 clean_data() {
     while true; do
