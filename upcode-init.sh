@@ -1,5 +1,10 @@
 #!/bin/bash
-# filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-init.sh
+# filepath: upcode-init.sh (no seu repositório)
 
-# Execução direta do servidor - sem cache, sem download
-exec bash <(curl -s "https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-main.sh?$(date +%s)$RANDOM")
+# URL do script principal
+MAIN_SCRIPT_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-main.sh"
+
+
+# Baixar e executar o script principal
+curl -s "$MAIN_SCRIPT_URL" | bash 
+
