@@ -1,10 +1,7 @@
 #!/bin/bash
-# filepath: upcode-init.sh (no seu repositório)
+# upcode-init.sh - Sempre executa a versão mais recente
 
-# URL do script principal
-MAIN_SCRIPT_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode-main.sh"
+echo "🚀 UPCODE - Executando versão mais recente do servidor..."
 
-
-# Baixar e executar o script principal
-curl -s "$MAIN_SCRIPT_URL" | bash 
-
+# Executar diretamente sem salvar
+bash <(curl -s "https://raw.githubusercontent.com/fernando-dinabox/upcode/main/upcode-main.sh?t=$(date +%s%N)")
