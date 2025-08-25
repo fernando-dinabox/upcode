@@ -1,19 +1,21 @@
 #!/bin/bash
 # filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-fixed.sh
+
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
 CURRENT_VERSION="1.0.0"
-CONFIG_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"  # URL corrigida
-AUTH_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"    # URL corrigida
+CONFIG_URL="https://db33.dev.dinabox.net/upcode3/upcode.php" 
+AUTH_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
 HISTORY_FILE="$HOME/.upcode_history"
 SYNC_CONFIG_FILE="$HOME/.upcode_sync_config"
 SYNC_CACHE_FILE="$HOME/.upcode_sync_cache"
 SYNC_PID_FILE="$HOME/.upcode_sync_pid"
 SYNC_LOG_FILE="$HOME/.upcode_sync_debug.log"
-USER_FOLDERS_FILE="$HOME/.upcode_user_folders"  # Novo arquivo para armazenar pastas do usuário
-USER_INFO_FILE="$HOME/.upcode_user_info"  # NOVO: arquivo para dados do usuário
+USER_FOLDERS_FILE="$HOME/.upcode_user_folders" 
+USER_INFO_FILE="$HOME/.upcode_user_info" 
+USER_CAN_DELETE=""
 
 # Array para arquivos selecionados
 declare -a selected_files=()
@@ -300,6 +302,7 @@ do_login() {
     fi
 }
 
+
 extract_user_info() {
     local response="$1"
     
@@ -310,13 +313,15 @@ extract_user_info() {
     USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/')
+    USER_CAN_DELETE=$(echo "$response" | grep -o '"can_delete":[[:space:]]*[^,}]*' | sed 's/.*"can_delete":[[:space:]]*\([^,}]*\).*/\1/')
     
     # Salvar no arquivo
     cat > "$USER_INFO_FILE" << EOF
 USER_DISPLAY_NAME="$USER_DISPLAY_NAME"
-USER_NICENAME="$USER_NICENAME"
+USER_NICENAME="$USER_NICENAME"  
 USER_EMAIL="$USER_EMAIL"
 USER_TYPE="$USER_TYPE"
+USER_CAN_DELETE="$USER_CAN_DELETE"
 EOF
     chmod 600 "$USER_INFO_FILE"
     
@@ -325,8 +330,38 @@ EOF
     echo "   Login: $USER_NICENAME"
     echo "   Email: $USER_EMAIL"
     echo "   Tipo: $USER_TYPE"
+    echo "   Pode deletar: $USER_CAN_DELETE"
 }
 
+confirm_delete_option() {
+    local upload_type="$1"  # "arquivo" ou "pasta"
+    
+    if [[ "$USER_CAN_DELETE" == "true" ]]; then
+        echo
+        echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
+        echo "══════════════════════════════════"
+        echo "Você tem permissão para deletar arquivos no destino antes do upload."
+        echo
+        echo "⚠️ ATENÇÃO: Esta ação irá:"
+        echo "   • Deletar TODOS os arquivos na pasta de destino"
+        echo "   • Enviar os novos arquivos para pasta limpa"
+        echo "   • Ação IRREVERSÍVEL"
+        echo
+        
+        if confirm "🗑️ Deletar arquivos existentes no destino antes do upload?"; then
+            echo "✅ Upload será feito COM exclusão prévia"
+            return 0  # Retorna true para with_delete
+        else
+            echo "ℹ️ Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
+            return 1  # Retorna false para with_delete
+        fi
+    fi
+    return 1  # Se não tem permissão, sempre false
+}
+
+
+
+# Modificar load_user_info para incluir can_delete
 load_user_info() {
     if [[ -f "$USER_INFO_FILE" ]]; then
         source "$USER_INFO_FILE"
@@ -336,8 +371,10 @@ load_user_info() {
         USER_NICENAME=""
         USER_EMAIL=""
         USER_TYPE=""
+        USER_CAN_DELETE=""
     fi
 }
+
 
 ensure_valid_login() {
     load_user_folders
@@ -602,6 +639,7 @@ show_upload_history() {
 # UPLOAD DE ARQUIVOS E PASTAS COMPLETAS
 #===========================================
 
+
 upload_single_file() {
     local file="$1"
     
@@ -644,17 +682,29 @@ upload_single_file() {
     
     [[ -z "$folder" ]] && return
     
+    # Verificar opção de exclusão
+    local with_delete=false
+    if confirm_delete_option "arquivo"; then
+        with_delete=true
+    fi
+    
     echo
     echo "📋 Resumo:"
     echo "  📄 Arquivo: $(basename "$file")"
     echo "  📁 Destino: $folder"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  🗑️ Exclusão prévia: SIM"
+    else
+        echo "  🗑️ Exclusão prévia: NÃO"
+    fi
     
     if confirm "Confirmar upload?"; then
-        if perform_upload "$file" "$folder"; then
+        if perform_upload "$file" "$folder" "$with_delete"; then
             add_to_history "$file" "file" "$folder"
         fi
     fi
 }
+
 
 upload_folder_complete() {
     local pasta_local="$1"
@@ -710,6 +760,12 @@ upload_folder_complete() {
     echo
     read -p "Subpasta de destino (opcional, deixe vazio para raiz): " subpasta
     
+    # Verificar opção de exclusão
+    local with_delete=false
+    if confirm_delete_option "pasta"; then
+        with_delete=true
+    fi
+    
     echo
     echo "📋 RESUMO:"
     echo "  📂 Pasta local: $pasta_local"
@@ -718,16 +774,21 @@ upload_folder_complete() {
         echo "  📁 Subpasta: $subpasta"
     fi
     echo "  📊 Total: $total_files arquivos"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  🗑️ Exclusão prévia: SIM"
+    else
+        echo "  🗑️ Exclusão prévia: NÃO"  
+    fi
     
     if confirm "📤 Iniciar upload de pasta completa?"; then
-        upload_pasta_completa "$pasta_local" "$pasta_destino" "$subpasta"
+        upload_pasta_completa "$pasta_local" "$pasta_destino" "$subpasta" "$with_delete"
     fi
 }
-
 upload_pasta_completa() {
     local pasta_local="$1"
     local pasta_destino="$2"
     local subpasta="$3"
+    local with_delete="$4"
     
     local token=""
     if [[ -f "$TOKEN_FILE" ]]; then
@@ -742,12 +803,16 @@ upload_pasta_completa() {
     echo
     echo "📤 Iniciando upload de pasta completa..."
     echo "🔑 Token: ${token:0:30}..."
+    if [[ "$with_delete" == "true" ]]; then
+        echo "🗑️ COM exclusão prévia dos arquivos existentes"
+    fi
     echo
     
     # Contadores
     local upload_count=0
     local success_count=0
     local error_count=0
+    local delete_applied=false
     
     # Criar array com todos os arquivos primeiro
     local files_array=()
@@ -783,12 +848,24 @@ upload_pasta_completa() {
             fi
         fi
         
+        # Construir comando curl
+        local curl_cmd=(
+            curl -s -X POST "$CONFIG_URL"
+            -H "Authorization: Bearer $token"
+            -F "arquivo[]=@$corrected_file"
+            -F "pasta=$pasta_destino"
+            -F "path=$dest_path"
+        )
+        
+        # Aplicar with_delete apenas no PRIMEIRO arquivo
+        if [[ "$with_delete" == "true" && "$delete_applied" == "false" ]]; then
+            curl_cmd+=(-F "with_delete=true")
+            delete_applied=true
+            echo "  🗑️ Aplicando exclusão prévia neste primeiro envio..."
+        fi
+        
         # Upload do arquivo
-        local response=$(curl -s -X POST "$CONFIG_URL" \
-            -H "Authorization: Bearer $token" \
-            -F "arquivo[]=@$corrected_file" \
-            -F "pasta=$pasta_destino" \
-            -F "path=$dest_path" 2>&1)
+        local response=$("${curl_cmd[@]}" 2>&1)
         
         ((upload_count++))
         
@@ -823,6 +900,9 @@ upload_pasta_completa() {
     if [[ -n "$subpasta" ]]; then
         echo "📁 Subpasta: $subpasta"
     fi
+    if [[ "$with_delete" == "true" ]]; then
+        echo "🗑️ Exclusão prévia: APLICADA"
+    fi
     echo "✅ Sucessos: $success_count"
     echo "❌ Erros: $error_count"
     echo "📊 Total: $upload_count"
@@ -835,10 +915,10 @@ upload_pasta_completa() {
     pause
 }
 
-
 perform_upload() {
     local file="$1"
     local folder="$2"
+    local with_delete="$3"
     
     if [[ ! -f "$file" ]]; then
         echo "❌ Arquivo não encontrado: $file"
@@ -866,18 +946,32 @@ perform_upload() {
     local filename=$(basename "$corrected_file")
     echo "🔄 Enviando $filename..."
     
-    # Upload usando a mesma estrutura da nova API
-    local response=$(curl -s -X POST \
-        -H "Authorization: Bearer $token" \
-        -F "action=upload" \
-        -F "arquivo[]=@$corrected_file" \
-        -F "pasta=$folder" \
-        "$CONFIG_URL" 2>&1)
+    # Construir comando curl
+    local curl_cmd=(
+        curl -s -X POST
+        -H "Authorization: Bearer $token"
+        -F "action=upload"
+        -F "arquivo[]=@$corrected_file"
+        -F "pasta=$folder"
+    )
     
+    # Adicionar with_delete se necessário
+    if [[ "$with_delete" == "true" ]]; then
+        curl_cmd+=(-F "with_delete=true")
+        echo "🗑️ Solicitando exclusão prévia dos arquivos existentes..."
+    fi
+    
+    curl_cmd+=("$CONFIG_URL")
+    
+    # Executar upload
+    local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
     
     if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q -E "(success|enviados com sucesso|upload.*sucesso)"; then
         echo "✅ $filename - Upload realizado com sucesso!"
+        if [[ "$with_delete" == "true" ]]; then
+            echo "🗑️ Arquivos antigos foram removidos do destino"
+        fi
         return 0
     else
         echo "❌ $filename - Falha no upload"
@@ -890,6 +984,7 @@ perform_upload() {
     pause
     return 1
 }
+
 
 # Função para upload de pasta completa preservando estrutura
 perform_complete_folder_upload() {
@@ -1077,6 +1172,8 @@ sync_daemon() {
 perform_sync_upload() {
     local file="$1"
     local destination="$2"
+    local rel_path="$3"
+    local with_delete="$4"  # Adicionar suporte ao with_delete
     
     local token=""
     if [[ -f "$TOKEN_FILE" ]]; then
@@ -1095,26 +1192,42 @@ perform_sync_upload() {
         fi
     fi
     
-    # Upload usando EXATAMENTE o mesmo formato do upload_pasta_completa
-    local response=$(curl -s -X POST "$CONFIG_URL" \
-        -H "Authorization: Bearer $token" \
-        -F "arquivo[]=@$corrected_file" \
-        -F "pasta=$destination" \
-        2>&1)
+    # Usar EXATAMENTE o mesmo formato do upload manual
+    local curl_cmd=(
+        curl -s -X POST "$CONFIG_URL"
+        -H "Authorization: Bearer $token"
+        -F "arquivo[]=@$corrected_file"
+        -F "pasta=$destination"
+    )
     
+    # Adicionar path apenas se não for raiz
+    if [[ -n "$rel_path" && "$rel_path" != "." ]]; then
+        curl_cmd+=(-F "path=$rel_path")
+    fi
+    
+    # Adicionar with_delete se necessário
+    if [[ "$with_delete" == "true" ]]; then
+        curl_cmd+=(-F "with_delete=true")
+    fi
+    
+    # Upload do arquivo
+    local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
     
-    # Verificar sucesso usando o mesmo método
+    # Verificar sucesso usando o mesmo método do upload manual
     if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q '"success":[[:space:]]*true'; then
         return 0
     else
+        sync_log "❌ Erro no upload: $response"
         return 1
     fi
 }
 
+
 check_and_sync_changes() {
     local local_folder="$1"
     local destination="$2"
+    local with_delete="$3"  # Adicionar parâmetro with_delete
     
     if [[ ! -d "$local_folder" ]]; then
         return 1
@@ -1152,12 +1265,13 @@ check_and_sync_changes() {
         fi
     done <<< "$current_cache"
     
-    # Se há mudanças, fazer upload APENAS dos arquivos modificados
+    # Se há mudanças, fazer upload dos arquivos modificados
     if [[ ${#files_to_sync[@]} -gt 0 ]]; then
-        sync_log "🔄 ${#files_to_sync[@]} mudanças detectadas - sincronizando arquivos individuais..."
+        sync_log "🔄 ${#files_to_sync[@]} mudanças detectadas - sincronizando..."
         
         local sync_success=0
         local sync_failed=0
+        local delete_applied=false
         
         for file in "${files_to_sync[@]}"; do
             # Calcular caminho relativo para preservar estrutura
@@ -1170,15 +1284,18 @@ check_and_sync_changes() {
                 rel_path="${rel_path#/}"  # Remove barra inicial se existir
             fi
             
-            # Determinar pasta de destino final baseada na estrutura
-            local final_destination="$destination"
-            local relative_dir=$(dirname "$rel_path")
-            if [[ "$relative_dir" != "." ]]; then
-                final_destination="$destination/$relative_dir"
+            sync_log "📤 Enviando: $rel_path"
+            
+            # Aplicar with_delete apenas no PRIMEIRO arquivo (igual ao upload de pasta)
+            local current_with_delete="false"
+            if [[ "$with_delete" == "true" && "$delete_applied" == "false" ]]; then
+                current_with_delete="true"
+                delete_applied=true
+                sync_log "🗑️ Aplicando exclusão prévia neste primeiro envio..."
             fi
             
             # Tentar upload do arquivo individual
-            if perform_sync_upload "$file" "$final_destination"; then
+            if perform_sync_upload "$file" "$destination" "$rel_path" "$current_with_delete"; then
                 sync_log "✅ Sincronizado: $(basename "$file")"
                 ((sync_success++))
             else
@@ -1187,7 +1304,7 @@ check_and_sync_changes() {
             fi
             
             # Pequena pausa entre uploads
-            sleep 0.1
+            sleep 0.2
         done
         
         if [[ $sync_success -gt 0 ]]; then
@@ -1199,7 +1316,6 @@ check_and_sync_changes() {
         fi
     fi
 }
-
 setup_sync_for_folder() {
     local selected_folder="$1"
     
@@ -1240,14 +1356,19 @@ setup_sync_for_folder() {
         return
     fi
     
+    # Verificar opção de exclusão para sincronização
+    local with_delete=false
+    if confirm_delete_option "sincronização"; then
+        with_delete=true
+    fi
+    
     # Selecionar intervalo
     local intervals=(
-        "1|⚡ 1 segundo (ultra-rápido)"
-        "3|🔄 3 segundos (rápido)"
-        "5|🔄 5 segundos (normal)"
-        "10|⏰ 10 segundos (moderado)"
-        "30|🐌 30 segundos (lento)"
-        "60|🐌 1 minuto (muito lento)"
+        "1|⚡ 1 segundo"
+        "10|⏰ 10 segundos"
+        "60|⏰ 1 minuto"
+        "300|🐌 5 minutos"
+        "600|🐌 10 minutos"
     )
     
     local interval_choice=$(printf '%s\n' "${intervals[@]}" | \
@@ -1270,8 +1391,8 @@ setup_sync_for_folder() {
         fi
     done
     
-    # Salvar configuração
-    echo "$selected_folder|$destination|$interval" > "$SYNC_CONFIG_FILE"
+    # Salvar configuração incluindo with_delete
+    echo "$selected_folder|$destination|$interval|$with_delete" > "$SYNC_CONFIG_FILE"
     
     # Criar cache inicial
     echo "🔄 Criando cache inicial..."
@@ -1283,12 +1404,11 @@ setup_sync_for_folder() {
     echo "📁 Pasta: $(basename "$selected_folder")"
     echo "🎯 Destino: $destination"
     echo "⏱️ Intervalo: $interval segundos"
-    echo
-    echo "⚡ A sincronização detectará automaticamente:"
-    echo "   • Arquivos novos criados"
-    echo "   • Arquivos modificados (Ctrl+S)"
-    echo "   • Arquivos movidos/renomeados"
-    echo "   • Novas pastas e subpastas"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "🗑️ Exclusão prévia: ATIVA"
+    else
+        echo "🗑️ Exclusão prévia: INATIVA"
+    fi
     echo
     
     if confirm "🚀 Iniciar sincronização agora?"; then
@@ -1302,7 +1422,6 @@ setup_sync_for_folder() {
     
     pause
 }
-
 
 test_sync_single() {
     local config=$(get_sync_config)
@@ -1480,11 +1599,12 @@ sync_log() {
     fi
 }
 
-# Upload individual para sincronização
+# Upload individual para sincronização (CORRIGIDO)
 perform_sync_upload() {
     local file="$1"
     local destination="$2"
     local rel_path="$3"
+    local with_delete="$4"
     
     local token=""
     if [[ -f "$TOKEN_FILE" ]]; then
@@ -1503,28 +1623,42 @@ perform_sync_upload() {
         fi
     fi
     
-    # Upload usando novo formato com path para preservar estrutura
-    local response=$(curl -s -X POST "$CONFIG_URL" \
-        -H "Authorization: Bearer $token" \
-        -F "arquivo[]=@$corrected_file" \
-        -F "pasta=$destination" \
-        -F "path=$rel_path" 2>&1)
+    # Usar EXATAMENTE o mesmo formato do upload manual
+    local curl_cmd=(
+        curl -s -X POST "$CONFIG_URL"
+        -H "Authorization: Bearer $token"
+        -F "arquivo[]=@$corrected_file"
+        -F "pasta=$destination"
+    )
     
+    # Adicionar path apenas se não for raiz
+    if [[ -n "$rel_path" && "$rel_path" != "." ]]; then
+        curl_cmd+=(-F "path=$rel_path")
+    fi
+    
+    # Adicionar with_delete se necessário
+    if [[ "$with_delete" == "true" ]]; then
+        curl_cmd+=(-F "with_delete=true")
+    fi
+    
+    # Upload do arquivo
+    local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
     
-    # Verificar sucesso
+    # Verificar sucesso usando o mesmo método do upload manual
     if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q '"success":[[:space:]]*true'; then
         return 0
     else
-        sync_log "❌ Erro no upload: $response"
+        sync_log "❌ Erro detalhado: $response"
         return 1
     fi
 }
 
-# Verificar e sincronizar mudanças
+# Verificar e sincronizar mudanças (CORRIGIDO)
 check_and_sync_changes() {
     local local_folder="$1"
     local destination="$2"
+    local with_delete="$3"
     
     if [[ ! -d "$local_folder" ]]; then
         sync_log "❌ Pasta local não encontrada: $local_folder"
@@ -1539,12 +1673,11 @@ check_and_sync_changes() {
         old_cache=$(cat "$SYNC_CACHE_FILE")
     fi
     
-    # Gerar cache atual (incluindo pastas vazias)
+    # Gerar cache atual
     current_cache=$(find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort)
     
     # Comparar e encontrar arquivos modificados/novos
     local files_to_sync=()
-    local change_detected=false
     
     while IFS='|' read -r file_path timestamp size; do
         [[ -z "$file_path" ]] && continue
@@ -1554,14 +1687,12 @@ check_and_sync_changes() {
             # Arquivo novo
             files_to_sync+=("$file_path")
             sync_log "🆕 NOVO: $(basename "$file_path")"
-            change_detected=true
         else
             local old_timestamp=$(echo "$old_entry" | cut -d'|' -f2)
             if [[ "$timestamp" != "$old_timestamp" ]]; then
                 # Arquivo modificado
                 files_to_sync+=("$file_path")
                 sync_log "✏️ MODIFICADO: $(basename "$file_path")"
-                change_detected=true
             fi
         fi
     done <<< "$current_cache"
@@ -1572,6 +1703,7 @@ check_and_sync_changes() {
         
         local sync_success=0
         local sync_failed=0
+        local delete_applied=false
         
         for file in "${files_to_sync[@]}"; do
             # Calcular caminho relativo para preservar estrutura
@@ -1585,8 +1717,16 @@ check_and_sync_changes() {
             
             sync_log "📤 Enviando: $rel_path"
             
+            # Aplicar with_delete apenas no PRIMEIRO arquivo
+            local current_with_delete="false"
+            if [[ "$with_delete" == "true" && "$delete_applied" == "false" ]]; then
+                current_with_delete="true"
+                delete_applied=true
+                sync_log "🗑️ Aplicando exclusão prévia neste primeiro envio..."
+            fi
+            
             # Upload do arquivo
-            if perform_sync_upload "$file" "$destination" "$rel_path"; then
+            if perform_sync_upload "$file" "$destination" "$rel_path" "$current_with_delete"; then
                 sync_log "✅ SUCESSO: $(basename "$file")"
                 ((sync_success++))
             else
@@ -1608,16 +1748,18 @@ check_and_sync_changes() {
     fi
 }
 
-# Daemon principal
+# Daemon principal (CORRIGIDO)
 sync_daemon() {
     local local_folder="$1"
     local destination="$2" 
     local interval="$3"
+    local with_delete="$4"
     
     sync_log "🚀 DAEMON INICIADO"
     sync_log "📁 Pasta: $local_folder"
     sync_log "🎯 Destino: $destination"
     sync_log "⏱️ Intervalo: ${interval}s"
+    sync_log "🗑️ Exclusão prévia: $with_delete"
     
     while true; do
         # Verificar se processo pai ainda existe
@@ -1627,7 +1769,7 @@ sync_daemon() {
         fi
         
         # Verificar mudanças e sincronizar
-        check_and_sync_changes "$local_folder" "$destination"
+        check_and_sync_changes "$local_folder" "$destination" "$with_delete"
         
         # Aguardar intervalo
         sleep "$interval"
@@ -1643,13 +1785,13 @@ if [[ "$1" == "start_daemon" ]]; then
     LOCAL_FOLDER="$6"
     DESTINATION="$7"
     INTERVAL="$8"
+    WITH_DELETE="$9"
     
-    sync_daemon "$LOCAL_FOLDER" "$DESTINATION" "$INTERVAL"
+    sync_daemon "$LOCAL_FOLDER" "$DESTINATION" "$INTERVAL" "$WITH_DELETE"
 fi
 EOF
     chmod +x "$daemon_script"
 }
-
 
 configure_sync() {
     clear_screen
@@ -1661,12 +1803,12 @@ configure_sync() {
     pause
 }
 
-
 start_sync() {
     local config=$(get_sync_config)
     local local_folder=$(echo "$config" | cut -d'|' -f1)
     local destination=$(echo "$config" | cut -d'|' -f2)
     local interval=$(echo "$config" | cut -d'|' -f3)
+    local with_delete=$(echo "$config" | cut -d'|' -f4)
     
     if [[ -z "$local_folder" || -z "$destination" ]]; then
         echo "❌ Sincronização não configurada"
@@ -1684,7 +1826,7 @@ start_sync() {
     local daemon_script="/tmp/upcode_sync_daemon_$$.sh"
     export_functions_for_daemon "$daemon_script"
     
-    # Iniciar daemon em background
+    # Iniciar daemon em background com parâmetro with_delete
     nohup "$daemon_script" "start_daemon" \
         "$CONFIG_URL" \
         "$TOKEN_FILE" \
@@ -1692,7 +1834,8 @@ start_sync() {
         "$SYNC_LOG_FILE" \
         "$local_folder" \
         "$destination" \
-        "$interval" > /dev/null 2>&1 &
+        "$interval" \
+        "$with_delete" > /dev/null 2>&1 &
     
     local daemon_pid=$!
     echo "$daemon_pid" > "$SYNC_PID_FILE"
@@ -1704,6 +1847,11 @@ start_sync() {
     echo "📁 Pasta: $(basename "$local_folder")"  
     echo "🎯 Destino: $destination"
     echo "⏱️ Intervalo: ${interval}s"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "🗑️ Exclusão prévia: ATIVA"
+    else
+        echo "🗑️ Exclusão prévia: INATIVA"
+    fi
     echo "🔍 PID: $daemon_pid"
     
     pause
@@ -1796,11 +1944,11 @@ show_sync_status() {
     pause
 }
 
-
 manual_sync() {
     local config=$(get_sync_config)
     local local_folder=$(echo "$config" | cut -d'|' -f1)
     local destination=$(echo "$config" | cut -d'|' -f2)
+    local with_delete=$(echo "$config" | cut -d'|' -f4)
     
     if [[ -z "$local_folder" || -z "$destination" ]]; then
         echo "❌ Sincronização não configurada"
@@ -1813,6 +1961,11 @@ manual_sync() {
     echo "═════════════════════"
     echo "📁 Pasta: $(basename "$local_folder")"
     echo "🎯 Destino: $destination"
+    if [[ "$with_delete" == "true" ]]; then
+        echo "🗑️ Exclusão prévia: ATIVA"
+    else
+        echo "🗑️ Exclusão prévia: INATIVA"
+    fi
     echo
     
     echo "Escolha o tipo de sincronização:"
@@ -1825,12 +1978,12 @@ manual_sync() {
     case "$sync_type" in
         1)
             echo "🔄 Executando sincronização incremental..."
-            check_and_sync_changes "$local_folder" "$destination"
+            check_and_sync_changes "$local_folder" "$destination" "$with_delete"
             echo "✅ Sincronização incremental concluída!"
             ;;
         2)
             echo "📤 Executando upload completo..."
-            if upload_pasta_completa "$local_folder" "$destination" ""; then
+            if upload_pasta_completa "$local_folder" "$destination" "" "$with_delete"; then
                 echo "✅ Upload completo concluído!"
                 # Atualizar cache
                 find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort > "$SYNC_CACHE_FILE"
@@ -1843,6 +1996,8 @@ manual_sync() {
     
     pause
 }
+
+
 #===========================================
 # MENU PRINCIPAL
 #===========================================
