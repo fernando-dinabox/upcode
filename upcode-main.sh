@@ -1,10 +1,8 @@
 #!/bin/bash
-# filepath: c:\Users\Dinabox\Desktop\PROJECTS\main\upcode\upcode-fixed.sh
-
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
-CURRENT_VERSION="1.0.2"
+CURRENT_VERSION="1.0.0"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode3/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
@@ -63,28 +61,27 @@ clear_screen() {
 
 
 
-self_update() {
-    local tmpfile=$(mktemp)
+# FORÇAR VERIFICAÇÃO DE VERSÃO NO INÍCIO
+force_update_check() {
+    echo "🔍 Verificando versão mais recente..."
+    local remote_content=$(curl -s "$UPDATE_URL?v=$(date +%s)" 2>/dev/null)
     
-    # Baixar versão mais recente
-    if curl -s "$UPDATE_URL" -o "$tmpfile" 2>/dev/null; then
-        # Extrair versão remota
-        local remote_ver=$(grep '^CURRENT_VERSION=' "$tmpfile" | cut -d'"' -f2)
-        local local_ver="$CURRENT_VERSION"
+    if [[ -n "$remote_content" ]]; then
+        local remote_version=$(echo "$remote_content" | grep '^CURRENT_VERSION=' | head -1 | cut -d'"' -f2)
         
-        # Verificar se há diferença
-        if ! cmp -s "$tmpfile" "$0"; then
-            echo "⚡ Atualizando UPCODE de v$local_ver → v$remote_ver"
-            cp "$tmpfile" "$0"
-            chmod +x "$0"
-            echo "✅ Atualizado com sucesso! Reiniciando..."
-            sleep 1
-            exec "$0" "$@"
+        if [[ -n "$remote_version" && "$remote_version" != "$CURRENT_VERSION" ]]; then
+            echo "🆕 Nova versão disponível: $remote_version (atual: $CURRENT_VERSION)"
+            echo "🔄 Executando versão mais recente..."
+            echo "$remote_content" | bash
+            exit 0
+        else
+            echo "✅ Executando versão atual ($CURRENT_VERSION)"
         fi
     fi
-    
-    rm -f "$tmpfile"
 }
+
+# Chamar verificação no início
+force_update_check
 
 
 install_fzf() {
@@ -129,29 +126,6 @@ install_fzf() {
         echo "   Linux: sudo apt install fzf"
         return 1
     fi
-}
-
-self_update() {
-    local tmpfile=$(mktemp)
-    
-    # Baixar versão mais recente
-    if curl -s "$UPDATE_URL" -o "$tmpfile" 2>/dev/null; then
-        # Extrair versão remota
-        local remote_ver=$(grep '^CURRENT_VERSION=' "$tmpfile" | cut -d'"' -f2)
-        local local_ver="$CURRENT_VERSION"
-        
-        # Verificar se há diferença
-        if ! cmp -s "$tmpfile" "$0"; then
-            echo "⚡ Atualizando UPCODE de v$local_ver → v$remote_ver"
-            cp "$tmpfile" "$0"
-            chmod +x "$0"
-            echo "✅ Atualizado com sucesso! Reiniciando..."
-            sleep 1
-            exec "$0" "$@"
-        fi
-    fi
-    
-    rm -f "$tmpfile"
 }
 
 
@@ -2227,7 +2201,6 @@ show_progress() {
 #===========================================
 # INÍCIO DIRETO DO PROGRAMA
 #===========================================
-self_update
 
 show_banner
 check_dependencies
