@@ -6,18 +6,27 @@
 #===========================================
 # CONFIGURAÇÕES
 #===========================================
-CURRENT_VERSION="1.0.1"  # Adicionado versão
-CONFIG_URL="https://db33.dev.dinabox.net/upcode.php"
-AUTH_URL="https://db33.dev.dinabox.net/api/dinabox/system/users/auth"
+CURRENT_VERSION="1.0.0"
+CONFIG_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"  # URL corrigida
+AUTH_URL="https://db33.dev.dinabox.net/upcode3/upcode.php"    # URL corrigida
 TOKEN_FILE="$HOME/.upcode_token"
 HISTORY_FILE="$HOME/.upcode_history"
 SYNC_CONFIG_FILE="$HOME/.upcode_sync_config"
 SYNC_CACHE_FILE="$HOME/.upcode_sync_cache"
 SYNC_PID_FILE="$HOME/.upcode_sync_pid"
 SYNC_LOG_FILE="$HOME/.upcode_sync_debug.log"
+USER_FOLDERS_FILE="$HOME/.upcode_user_folders"  # Novo arquivo para armazenar pastas do usuário
+USER_INFO_FILE="$HOME/.upcode_user_info"  # NOVO: arquivo para dados do usuário
 
 # Array para arquivos selecionados
 declare -a selected_files=()
+declare -a user_folders=()  # Array para as pastas do usuário
+
+# Variáveis para dados do usuário logado
+USER_DISPLAY_NAME=""
+USER_NICENAME=""
+USER_EMAIL=""
+USER_TYPE=""
 
 # Configurações de interface
 FZF_DEFAULT_OPTS="--height=40% --border --margin=1 --color=fg:#f8f8f2,bg:#282a36,hl:#bd93f9"
@@ -44,12 +53,38 @@ show_banner() {
     sleep 2
 }
 
+
 # Limpar tela (modificado para mostrar versão)
 clear_screen() {
     clear
     echo "🚀 UPCODE v$CURRENT_VERSION - Sistema de Upload"
     echo "═════════════════════════════════════════════════"
     echo
+}
+
+
+
+self_update() {
+    local tmpfile=$(mktemp)
+    
+    # Baixar versão mais recente
+    if curl -s "$UPDATE_URL" -o "$tmpfile" 2>/dev/null; then
+        # Extrair versão remota
+        local remote_ver=$(grep '^CURRENT_VERSION=' "$tmpfile" | cut -d'"' -f2)
+        local local_ver="$CURRENT_VERSION"
+        
+        # Verificar se há diferença
+        if ! cmp -s "$tmpfile" "$0"; then
+            echo "⚡ Atualizando UPCODE de v$local_ver → v$remote_ver"
+            cp "$tmpfile" "$0"
+            chmod +x "$0"
+            echo "✅ Atualizado com sucesso! Reiniciando..."
+            sleep 1
+            exec "$0" "$@"
+        fi
+    fi
+    
+    rm -f "$tmpfile"
 }
 
 
@@ -97,38 +132,32 @@ install_fzf() {
     fi
 }
 
-check_for_updates() {
-    echo "🔄 Verificando atualizações..."
+self_update() {
+    local tmpfile=$(mktemp)
     
-    # SEMPRE baixar a versão mais recente - sem verificação
-    echo "📥 Baixando versão mais recente..."
-    
-    # Backup da versão atual
-    cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    # Download da nova versão SEMPRE
-    local temp_file=$(mktemp)
-    if curl -s --max-time 30 "$UPDATE_URL" -o "$temp_file" && [[ -s "$temp_file" ]]; then
-        if head -1 "$temp_file" | grep -q "#!/bin/bash"; then
-            cp "$temp_file" "$0" && chmod +x "$0"
-            rm -f "$temp_file"
-            echo "✅ Versão atualizada! Reiniciando..."
+    # Baixar versão mais recente
+    if curl -s "$UPDATE_URL" -o "$tmpfile" 2>/dev/null; then
+        # Extrair versão remota
+        local remote_ver=$(grep '^CURRENT_VERSION=' "$tmpfile" | cut -d'"' -f2)
+        local local_ver="$CURRENT_VERSION"
+        
+        # Verificar se há diferença
+        if ! cmp -s "$tmpfile" "$0"; then
+            echo "⚡ Atualizando UPCODE de v$local_ver → v$remote_ver"
+            cp "$tmpfile" "$0"
+            chmod +x "$0"
+            echo "✅ Atualizado com sucesso! Reiniciando..."
             sleep 1
             exec "$0" "$@"
         fi
     fi
     
-    echo "❌ Falha ao baixar nova versão - usando versão local"
-    rm -f "$temp_file"
+    rm -f "$tmpfile"
 }
 
-startup_check() {
-    # SEMPRE baixar a versão mais recente
-    check_for_updates "$@"
-}
 
 #===========================================
-# UTILITÁRIOS (modificado apenas check_dependencies)
+# UTILITÁRIOS E FUNÇÕES GERAIS
 #===========================================
 
 check_dependencies() {
@@ -200,7 +229,11 @@ check_token() {
     if [[ -f "$TOKEN_FILE" ]]; then
         local token=$(cat "$TOKEN_FILE" 2>/dev/null)
         if [[ -n "$token" && "$token" != "null" ]]; then
-            return 0
+            # Verificar se ainda temos as pastas do usuário E os dados do usuário
+            if [[ -f "$USER_FOLDERS_FILE" && -s "$USER_FOLDERS_FILE" ]] && [[ -f "$USER_INFO_FILE" && -s "$USER_INFO_FILE" ]]; then
+                load_user_info
+                return 0
+            fi
         fi
     fi
     return 1
@@ -211,8 +244,7 @@ do_login() {
     echo "🔐 Login necessário"
     echo "─────────────────"
     
-    read -p "👤 Usuário [db17]: " username </dev/tty
-    username=${username:-db17}
+    read -p "👤 Usuário: " username </dev/tty
     read -s -p "🔑 Senha: " password </dev/tty
     echo
     
@@ -224,23 +256,188 @@ do_login() {
     
     echo "🔄 Autenticando..."
     
-    local response=$(curl -s -X POST \
+    # Fazer login usando a mesma estrutura do test_login.sh
+    local response=$(curl -s -X POST "$AUTH_URL" \
+        -d "action=login" \
         -d "username=$username" \
-        -d "password=$password" \
-        "$AUTH_URL")
+        -d "password=$password")
     
-    local token=$(echo "$response" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+    echo "🔍 Debug - Resposta do servidor:"
+    echo "$response" | head -10
+    echo
+    
+    # Extrair token
+    local token=$(echo "$response" | grep -o '"token":[[:space:]]*"[^"]*"' | sed 's/.*"token":[[:space:]]*"\([^"]*\)".*/\1/')
     
     if [[ -n "$token" && "$token" != "null" ]]; then
+        # Salvar token
         echo "$token" > "$TOKEN_FILE"
         chmod 600 "$TOKEN_FILE"
+        
+        # Extrair e salvar dados do usuário
+        extract_user_info "$response"
+        
+        # Extrair e salvar pastas do usuário
+        extract_user_folders "$response"
+        
         echo "✅ Login realizado com sucesso!"
-        sleep 1
+        echo "👤 Usuário: $USER_DISPLAY_NAME ($USER_NICENAME)"
+        echo "📧 Email: $USER_EMAIL"
+        echo "🎭 Tipo: $USER_TYPE"
+        local folder_count=$(echo "$response" | grep -o '"folders_count":[[:space:]]*[0-9]*' | sed 's/.*"folders_count":[[:space:]]*\([0-9]*\).*/\1/')
+        echo "📁 Pastas disponíveis: $folder_count"
+        
+        # Carregar pastas para verificar
+        load_user_folders
+        echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
+        printf '   - "%s"\n' "${user_folders[@]}"
+        
+        sleep 3
         return 0
     else
         echo "❌ Falha na autenticação!"
+        echo "🔍 Resposta do servidor:"
+        echo "$response" | head -5
         pause
         exit 1
+    fi
+}
+
+extract_user_info() {
+    local response="$1"
+    
+    echo "🔍 Debug - Extraindo dados do usuário..."
+    
+    # Extrair dados do usuário do JSON
+    USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
+    USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/')
+    USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/')
+    USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/')
+    
+    # Salvar no arquivo
+    cat > "$USER_INFO_FILE" << EOF
+USER_DISPLAY_NAME="$USER_DISPLAY_NAME"
+USER_NICENAME="$USER_NICENAME"
+USER_EMAIL="$USER_EMAIL"
+USER_TYPE="$USER_TYPE"
+EOF
+    chmod 600 "$USER_INFO_FILE"
+    
+    echo "👤 Dados do usuário extraídos:"
+    echo "   Nome: $USER_DISPLAY_NAME"
+    echo "   Login: $USER_NICENAME"
+    echo "   Email: $USER_EMAIL"
+    echo "   Tipo: $USER_TYPE"
+}
+
+load_user_info() {
+    if [[ -f "$USER_INFO_FILE" ]]; then
+        source "$USER_INFO_FILE"
+        echo "👤 Usuário carregado: $USER_DISPLAY_NAME ($USER_NICENAME)"
+    else
+        USER_DISPLAY_NAME=""
+        USER_NICENAME=""
+        USER_EMAIL=""
+        USER_TYPE=""
+    fi
+}
+
+ensure_valid_login() {
+    load_user_folders
+    load_user_info
+    
+    if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
+        clear_screen
+        echo "⚠️ Sessão expirada ou dados inválidos"
+        echo "🔄 Fazendo novo login..."
+        echo
+        
+        # Limpar dados antigos
+        rm -f "$TOKEN_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE"
+        
+        # Forçar novo login
+        do_login
+        
+        # Recarregar dados
+        load_user_folders
+        load_user_info
+    fi
+}
+
+
+extract_user_folders() {
+    local response="$1"
+    
+    echo "🔍 Debug - Extraindo pastas..."
+    
+    # Método mais robusto para extrair as pastas do JSON
+    # Primeiro, extrair todo o array folders
+    local folders_section=$(echo "$response" | sed -n '/"folders":/,/\]/p')
+    
+    echo "🔍 Debug - Seção folders:"
+    echo "$folders_section"
+    
+    # Limpar arquivo anterior
+    > "$USER_FOLDERS_FILE"
+    
+    # Extrair cada linha que contém uma pasta (entre aspas)
+    echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' | while read -r folder; do
+        # Filtrar apenas linhas que não são palavras-chave
+        if [[ "$folder" != "folders" && -n "$folder" ]]; then
+            # Decodificar caracteres unicode simples
+            folder=$(echo "$folder" | sed 's/\\u00e1/á/g; s/\\u00e9/é/g; s/\\u00ed/í/g; s/\\u00f3/ó/g; s/\\u00fa/ú/g; s/\\u00e7/ç/g; s/\\u00e3/ã/g; s/\\u00f5/õ/g')
+            echo "$folder" >> "$USER_FOLDERS_FILE"
+        fi
+    done
+    
+    # Carregar pastas no array
+    user_folders=()
+    if [[ -f "$USER_FOLDERS_FILE" ]]; then
+        while IFS= read -r folder; do
+            [[ -n "$folder" ]] && user_folders+=("$folder")
+        done < "$USER_FOLDERS_FILE"
+    fi
+    
+    echo "📁 Pastas extraídas e carregadas: ${#user_folders[@]}"
+    printf '   📂 "%s"\n' "${user_folders[@]}"
+}
+
+load_user_folders() {
+    user_folders=()
+    if [[ -f "$USER_FOLDERS_FILE" ]]; then
+        while IFS= read -r folder; do
+            [[ -n "$folder" ]] && user_folders+=("$folder")
+        done < "$USER_FOLDERS_FILE"
+    fi
+    
+    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+}
+
+
+renew_token() {
+    clear_screen
+    echo "🔄 Renovar Token"
+    echo "──────────────"
+    echo
+    
+    if [[ -n "$USER_DISPLAY_NAME" ]]; then
+        echo "👤 Usuário atual: $USER_DISPLAY_NAME ($USER_NICENAME)"
+        echo
+    fi
+    
+    if confirm "Fazer novo login?"; then
+        # Limpar dados antigos
+        rm -f "$TOKEN_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE"
+        
+        # Limpar variáveis
+        USER_DISPLAY_NAME=""
+        USER_NICENAME=""
+        USER_EMAIL=""
+        USER_TYPE=""
+        user_folders=()
+        
+        # Forçar novo login
+        do_login
     fi
 }
 
@@ -405,7 +602,7 @@ show_upload_history() {
 }
 
 #===========================================
-# UPLOAD DE ARQUIVOS E PASTAS - CORRIGIDO
+# UPLOAD DE ARQUIVOS E PASTAS COMPLETAS
 #===========================================
 
 upload_single_file() {
@@ -417,24 +614,36 @@ upload_single_file() {
         return 1
     fi
     
+    # Garantir login válido
+    ensure_valid_login
+    
     clear_screen
     echo "📤 Upload de Arquivo"
     echo "──────────────────"
     echo "📄 Arquivo: $(basename "$file")"
     echo "💾 Tamanho: $(du -sh "$file" 2>/dev/null | cut -f1 || echo "N/A")"
     echo
+    echo "📁 Pastas disponíveis: ${#user_folders[@]}"
     
-    local folders=(
-        "Cutprefers (endpoint)"
-        "Resources (projetos avulso)"
-        "Configurador de máquinas (out)"
-        "teste fernando"
-    )
+    # Debug - mostrar as pastas disponíveis
+    if [[ ${#user_folders[@]} -eq 0 ]]; then
+        echo "❌ Nenhuma pasta disponível!"
+        echo "🔄 Tentando recarregar..."
+        load_user_folders
+        if [[ ${#user_folders[@]} -eq 0 ]]; then
+            echo "❌ Ainda sem pastas - forçando novo login..."
+            ensure_valid_login
+        fi
+    fi
     
-    local folder=$(printf '%s\n' "${folders[@]}" | \
+    echo "🔍 Debug - Pastas para seleção:"
+    printf '   📂 "%s"\n' "${user_folders[@]}"
+    echo
+    
+    local folder=$(printf '%s\n' "${user_folders[@]}" | \
         fzf --prompt="Pasta de destino > " \
             --header="Selecione onde enviar o arquivo" \
-            --height=10)
+            --height=$((${#user_folders[@]} + 5)))
     
     [[ -z "$folder" ]] && return
     
@@ -451,31 +660,26 @@ upload_single_file() {
 }
 
 upload_folder_complete() {
-    local folder="$1"
+    local pasta_local="$1"
     
-    if [[ ! -d "$folder" ]]; then
-        echo "❌ Pasta não encontrada: $folder"
+    if [[ ! -d "$pasta_local" ]]; then
+        echo "❌ Pasta não encontrada: $pasta_local"
         pause
         return 1
     fi
     
+    # Garantir login válido
+    ensure_valid_login
+    
     clear_screen
-    echo "📁 Upload Completo de Pasta"
-    echo "═══════════════════════════"
-    echo "📂 Pasta: $(basename "$folder")"
-    echo "📍 Caminho: $folder"
+    echo "📁 UPLOAD DE PASTA COMPLETA"
+    echo "============================"
     echo
+    echo "📁 Analisando pasta '$pasta_local'..."
     
-    echo "🔄 Analisando estrutura..."
-    local total_files=$(find "$folder" -type f 2>/dev/null | wc -l)
-    local total_dirs=$(find "$folder" -type d 2>/dev/null | wc -l)
-    local total_size=$(du -sh "$folder" 2>/dev/null | cut -f1 || echo "?")
-    
-    echo "📊 Estrutura encontrada:"
-    echo "   📄 Arquivos: $total_files"
-    echo "   📁 Subpastas: $((total_dirs - 1))"
-    echo "   💾 Tamanho total: $total_size"
-    echo
+    # Contar arquivos
+    local total_files=$(find "$pasta_local" -type f 2>/dev/null | wc -l)
+    echo "📊 Total de arquivos encontrados: $total_files"
     
     if [[ $total_files -eq 0 ]]; then
         echo "⚠️ Nenhum arquivo encontrado na pasta"
@@ -483,50 +687,157 @@ upload_folder_complete() {
         return 1
     fi
     
-    # Mostrar algumas subpastas como exemplo
-    if [[ $total_dirs -gt 1 ]]; then
-        echo "📋 Algumas subpastas encontradas:"
-        find "$folder" -type d | head -6 | tail -5 | while read -r dir; do
-            local rel_path="${dir#$folder/}"
-            echo "   📂 $rel_path"
-        done
-        if [[ $total_dirs -gt 6 ]]; then
-            echo "   ... e mais $((total_dirs - 6)) subpastas"
-        fi
-        echo
+    # Mostrar estrutura
+    echo "🌳 Estrutura da pasta:"
+    find "$pasta_local" -type f 2>/dev/null | head -20 | while read -r arquivo; do
+        echo "  📄 $arquivo"
+    done
+    
+    if [[ $total_files -gt 20 ]]; then
+        echo "  ... e mais $((total_files - 20)) arquivos"
     fi
     
-    local folders=(
-        "Cutprefers (endpoint)"
-        "Resources (projetos avulso)"
-        "Configurador de máquinas (out)"
-        "teste fernando"
-    )
-    
-    local destination=$(printf '%s\n' "${folders[@]}" | \
-        fzf --prompt="🎯 Destino > " \
-            --header="⚠️ TODA a estrutura será enviada!" \
-            --height=10)
-    
-    [[ -z "$destination" ]] && return
-    
     echo
-    echo "📋 CONFIRMAÇÃO FINAL:"
-    echo "═══════════════════════"
-    echo "📂 Pasta origem: $(basename "$folder")"
-    echo "🎯 Destino: $destination"
-    echo "📊 Total: $total_files arquivos em $((total_dirs - 1)) subpastas"
-    echo "💾 Tamanho: $total_size"
-    echo
-    echo "⚠️  ATENÇÃO: Toda a estrutura de pastas será recreada no servidor!"
+    echo "📁 Pastas disponíveis no servidor:"
+    printf '   📂 %s\n' "${user_folders[@]}"
     echo
     
-    if confirm "🚀 CONFIRMAR UPLOAD COMPLETO DA ESTRUTURA?"; then
-        if perform_complete_folder_upload "$folder" "$destination"; then
-            add_to_history "$folder" "folder" "$destination"
-        fi
+    # Selecionar pasta de destino
+    local pasta_destino=$(printf '%s\n' "${user_folders[@]}" | \
+        fzf --prompt="Pasta destino > " \
+            --header="Selecione a pasta de destino no servidor")
+    
+    [[ -z "$pasta_destino" ]] && return
+    
+    # Perguntar por subpasta (opcional)
+    echo
+    read -p "Subpasta de destino (opcional, deixe vazio para raiz): " subpasta
+    
+    echo
+    echo "📋 RESUMO:"
+    echo "  📂 Pasta local: $pasta_local"
+    echo "  🎯 Destino: $pasta_destino"
+    if [[ -n "$subpasta" ]]; then
+        echo "  📁 Subpasta: $subpasta"
+    fi
+    echo "  📊 Total: $total_files arquivos"
+    
+    if confirm "📤 Iniciar upload de pasta completa?"; then
+        upload_pasta_completa "$pasta_local" "$pasta_destino" "$subpasta"
     fi
 }
+
+upload_pasta_completa() {
+    local pasta_local="$1"
+    local pasta_destino="$2"
+    local subpasta="$3"
+    
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -z "$token" ]]; then
+        echo "❌ Token não encontrado"
+        return 1
+    fi
+    
+    echo
+    echo "📤 Iniciando upload de pasta completa..."
+    echo "🔑 Token: ${token:0:30}..."
+    echo
+    
+    # Contadores
+    local upload_count=0
+    local success_count=0
+    local error_count=0
+    
+    # Criar array com todos os arquivos primeiro
+    local files_array=()
+    while IFS= read -r -d '' arquivo; do
+        files_array+=("$arquivo")
+    done < <(find "$pasta_local" -type f -print0 2>/dev/null)
+    
+    # Upload de cada arquivo mantendo a estrutura
+    for arquivo in "${files_array[@]}"; do
+        # Calcular caminho relativo
+        local rel_path=""
+        if command -v realpath >/dev/null 2>&1; then
+            rel_path=$(realpath --relative-to="$pasta_local" "$arquivo" 2>/dev/null || echo "${arquivo#$pasta_local/}")
+        else
+            # Fallback para sistemas sem realpath
+            rel_path="${arquivo#$pasta_local/}"
+            rel_path="${rel_path#/}"  # Remove barra inicial se existir
+        fi
+        
+        # Adicionar subpasta se especificada
+        local dest_path="$rel_path"
+        if [[ -n "$subpasta" ]]; then
+            dest_path="$subpasta/$rel_path"
+        fi
+        
+        echo "📤 Enviando: $rel_path -> $dest_path"
+        
+        # Corrigir caminho para curl (Windows/WSL)
+        local corrected_file="$arquivo"
+        if [[ -d "/c/Windows" ]] && [[ ! -d "/mnt/c" ]]; then
+            if [[ "$arquivo" =~ ^/c/ ]]; then
+                corrected_file=$(echo "$arquivo" | sed 's|^/c|C:|')
+            fi
+        fi
+        
+        # Upload do arquivo
+        local response=$(curl -s -X POST "$CONFIG_URL" \
+            -H "Authorization: Bearer $token" \
+            -F "arquivo[]=@$corrected_file" \
+            -F "pasta=$pasta_destino" \
+            -F "path=$dest_path" 2>&1)
+        
+        ((upload_count++))
+        
+        # Verificar resultado
+        if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+            echo "  ✅ Sucesso"
+            ((success_count++))
+        else
+            echo "  ❌ Erro"
+            ((error_count++))
+            
+            # Mostrar erro se for o primeiro
+            if [[ $error_count -eq 1 ]]; then
+                local error_msg=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null)
+                if [[ -n "$error_msg" ]]; then
+                    echo "     Erro: $error_msg"
+                else
+                    echo "     Resposta: ${response:0:100}..."
+                fi
+            fi
+        fi
+        
+        # Pequena pausa para não sobrecarregar o servidor
+        sleep 0.1
+    done
+    
+    echo
+    echo "📊 RESUMO DO UPLOAD"
+    echo "==================="
+    echo "📁 Pasta local: $pasta_local"
+    echo "📁 Destino: $pasta_destino"
+    if [[ -n "$subpasta" ]]; then
+        echo "📁 Subpasta: $subpasta"
+    fi
+    echo "✅ Sucessos: $success_count"
+    echo "❌ Erros: $error_count"
+    echo "📊 Total: $upload_count"
+    
+    if [[ $success_count -gt 0 ]]; then
+        add_to_history "$pasta_local" "folder" "$pasta_destino"
+        echo "✅ Upload concluído!"
+    fi
+    
+    pause
+}
+
 
 perform_upload() {
     local file="$1"
@@ -558,15 +869,17 @@ perform_upload() {
     local filename=$(basename "$corrected_file")
     echo "🔄 Enviando $filename..."
     
+    # Upload usando a mesma estrutura da nova API
     local response=$(curl -s -X POST \
-        -H "Cookie: jwt_user=$token; user_jwt=$token" \
+        -H "Authorization: Bearer $token" \
+        -F "action=upload" \
         -F "arquivo[]=@$corrected_file" \
         -F "pasta=$folder" \
         "$CONFIG_URL" 2>&1)
     
     local curl_exit=$?
     
-    if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q "enviados com sucesso"; then
+    if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q -E "(success|enviados com sucesso|upload.*sucesso)"; then
         echo "✅ $filename - Upload realizado com sucesso!"
         return 0
     else
@@ -574,12 +887,14 @@ perform_upload() {
         if [[ $curl_exit -ne 0 ]]; then
             echo "   Erro curl: $curl_exit"
         fi
+        echo "   Resposta: $response"
     fi
     
     pause
     return 1
 }
 
+# Função para upload de pasta completa preservando estrutura
 perform_complete_folder_upload() {
     local folder="$1"
     local destination="$2"
@@ -681,6 +996,7 @@ perform_complete_folder_upload() {
     fi
 }
 
+# Adiciona entrada ao histórico de uploads
 add_to_history() {
     local item="$1"
     local item_type="$2"
@@ -761,6 +1077,44 @@ sync_daemon() {
     done
 }
 
+perform_sync_upload() {
+    local file="$1"
+    local destination="$2"
+    
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -z "$token" ]] || [[ ! -f "$file" ]]; then
+        return 1
+    fi
+    
+    # Corrigir caminho para curl
+    local corrected_file="$file"
+    if [[ -d "/c/Windows" ]] && [[ ! -d "/mnt/c" ]]; then
+        if [[ "$file" =~ ^/c/ ]]; then
+            corrected_file=$(echo "$file" | sed 's|^/c|C:|')
+        fi
+    fi
+    
+    # Upload usando EXATAMENTE o mesmo formato do upload_pasta_completa
+    local response=$(curl -s -X POST "$CONFIG_URL" \
+        -H "Authorization: Bearer $token" \
+        -F "arquivo[]=@$corrected_file" \
+        -F "pasta=$destination" \
+        2>&1)
+    
+    local curl_exit=$?
+    
+    # Verificar sucesso usando o mesmo método
+    if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q '"success":[[:space:]]*true'; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 check_and_sync_changes() {
     local local_folder="$1"
     local destination="$2"
@@ -788,26 +1142,63 @@ check_and_sync_changes() {
         
         local old_entry=$(echo "$old_cache" | grep "^$file_path|")
         if [[ -z "$old_entry" ]]; then
+            # Arquivo novo
             files_to_sync+=("$file_path")
             sync_log "🆕 Novo: $(basename "$file_path")"
         else
             local old_timestamp=$(echo "$old_entry" | cut -d'|' -f2)
             if [[ "$timestamp" != "$old_timestamp" ]]; then
+                # Arquivo modificado
                 files_to_sync+=("$file_path")
                 sync_log "✏️ Modificado: $(basename "$file_path")"
             fi
         fi
     done <<< "$current_cache"
     
-    # Se há mudanças, fazer upload completo da estrutura
+    # Se há mudanças, fazer upload APENAS dos arquivos modificados
     if [[ ${#files_to_sync[@]} -gt 0 ]]; then
-        sync_log "🔄 ${#files_to_sync[@]} mudanças detectadas - fazendo upload completo"
+        sync_log "🔄 ${#files_to_sync[@]} mudanças detectadas - sincronizando arquivos individuais..."
         
-        if perform_complete_folder_upload "$local_folder" "$destination" > /dev/null 2>&1; then
-            sync_log "✅ Upload completo realizado"
+        local sync_success=0
+        local sync_failed=0
+        
+        for file in "${files_to_sync[@]}"; do
+            # Calcular caminho relativo para preservar estrutura
+            local rel_path=""
+            if command -v realpath >/dev/null 2>&1; then
+                rel_path=$(realpath --relative-to="$local_folder" "$file" 2>/dev/null || echo "${file#$local_folder/}")
+            else
+                # Fallback para sistemas sem realpath
+                rel_path="${file#$local_folder/}"
+                rel_path="${rel_path#/}"  # Remove barra inicial se existir
+            fi
+            
+            # Determinar pasta de destino final baseada na estrutura
+            local final_destination="$destination"
+            local relative_dir=$(dirname "$rel_path")
+            if [[ "$relative_dir" != "." ]]; then
+                final_destination="$destination/$relative_dir"
+            fi
+            
+            # Tentar upload do arquivo individual
+            if perform_sync_upload "$file" "$final_destination"; then
+                sync_log "✅ Sincronizado: $(basename "$file")"
+                ((sync_success++))
+            else
+                sync_log "❌ Falha: $(basename "$file")"
+                ((sync_failed++))
+            fi
+            
+            # Pequena pausa entre uploads
+            sleep 0.1
+        done
+        
+        if [[ $sync_success -gt 0 ]]; then
+            sync_log "✅ Sincronização: $sync_success sucessos, $sync_failed falhas"
+            # Atualizar cache apenas se houve sucessos
             echo "$current_cache" > "$SYNC_CACHE_FILE"
         else
-            sync_log "❌ Upload completo falhou"
+            sync_log "❌ Sincronização falhou completamente"
         fi
     fi
 }
@@ -826,20 +1217,25 @@ setup_sync_for_folder() {
     if is_sync_running; then
         echo "⚠️ Parando sincronização atual..."
         stop_sync
+        sleep 2
     fi
     
-    # Selecionar destino
-    local folders=(
-        "Cutprefers (endpoint)"
-        "Resources (projetos avulso)"
-        "Configurador de máquinas (out)"
-        "teste fernando"
-    )
+    # Carregar pastas do usuário logado
+    load_user_folders
     
-    local destination=$(printf '%s\n' "${folders[@]}" | \
+    # Verificar se temos pastas disponíveis
+    if [[ ${#user_folders[@]} -eq 0 ]]; then
+        echo "❌ Nenhuma pasta disponível"
+        echo "🔄 Tente fazer login novamente"
+        pause
+        return
+    fi
+    
+    # Selecionar destino das pastas do usuário
+    local destination=$(printf '%s\n' "${user_folders[@]}" | \
         fzf --prompt="Destino > " \
-            --header="Selecione onde sincronizar" \
-            --height=10)
+            --header="Selecione onde sincronizar (${#user_folders[@]} pastas disponíveis)" \
+            --height=$((${#user_folders[@]} + 5)))
     
     if [[ -z "$destination" ]]; then
         echo "❌ Configuração cancelada"
@@ -849,16 +1245,19 @@ setup_sync_for_folder() {
     
     # Selecionar intervalo
     local intervals=(
-        "30|🔄 30 segundos (recomendado)"
-        "60|⏰ 1 minuto"
-        "300|🐌 5 minutos"
+        "1|⚡ 1 segundo (ultra-rápido)"
+        "3|🔄 3 segundos (rápido)"
+        "5|🔄 5 segundos (normal)"
+        "10|⏰ 10 segundos (moderado)"
+        "30|🐌 30 segundos (lento)"
+        "60|🐌 1 minuto (muito lento)"
     )
     
     local interval_choice=$(printf '%s\n' "${intervals[@]}" | \
         sed 's/^[^|]*|//' | \
         fzf --prompt="Intervalo > " \
-            --header="Frequência de verificação" \
-            --height=8)
+            --header="Frequência de verificação de mudanças" \
+            --height=10)
     
     if [[ -z "$interval_choice" ]]; then
         echo "❌ Configuração cancelada"
@@ -878,6 +1277,7 @@ setup_sync_for_folder() {
     echo "$selected_folder|$destination|$interval" > "$SYNC_CONFIG_FILE"
     
     # Criar cache inicial
+    echo "🔄 Criando cache inicial..."
     find "$selected_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort > "$SYNC_CACHE_FILE"
     
     clear_screen
@@ -887,14 +1287,83 @@ setup_sync_for_folder() {
     echo "🎯 Destino: $destination"
     echo "⏱️ Intervalo: $interval segundos"
     echo
+    echo "⚡ A sincronização detectará automaticamente:"
+    echo "   • Arquivos novos criados"
+    echo "   • Arquivos modificados (Ctrl+S)"
+    echo "   • Arquivos movidos/renomeados"
+    echo "   • Novas pastas e subpastas"
+    echo
     
     if confirm "🚀 Iniciar sincronização agora?"; then
-        # Iniciar daemon
-        nohup bash -c "$(declare -f sync_daemon check_and_sync_changes perform_complete_folder_upload sync_log); sync_daemon '$selected_folder' '$destination' '$interval'" > /dev/null 2>&1 &
-        local daemon_pid=$!
+        start_sync
         
-        echo "$daemon_pid" > "$SYNC_PID_FILE"
-        echo "✅ Sincronização iniciada!"
+        echo
+        echo "✅ Sincronização ativa!"
+        echo "💡 Use 'Ver Status' para monitorar em tempo real"
+        sleep 2
+    fi
+    
+    pause
+}
+
+
+test_sync_single() {
+    local config=$(get_sync_config)
+    local local_folder=$(echo "$config" | cut -d'|' -f1)
+    local destination=$(echo "$config" | cut -d'|' -f2)
+    
+    if [[ -z "$local_folder" || -z "$destination" ]]; then
+        echo "❌ Sincronização não configurada"
+        pause
+        return
+    fi
+    
+    clear_screen
+    echo "🧪 Teste de Sincronização"
+    echo "═══════════════════════"
+    echo "📁 Pasta: $(basename "$local_folder")"
+    echo "🎯 Destino: $destination"
+    echo
+    
+    echo "🔍 Verificando mudanças..."
+    
+    # Simular verificação sem fazer upload
+    local current_cache=""
+    local old_cache=""
+    
+    if [[ -f "$SYNC_CACHE_FILE" ]]; then
+        old_cache=$(cat "$SYNC_CACHE_FILE")
+    fi
+    
+    current_cache=$(find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort)
+    
+    local files_to_sync=()
+    
+    while IFS='|' read -r file_path timestamp size; do
+        [[ -z "$file_path" ]] && continue
+        
+        local old_entry=$(echo "$old_cache" | grep "^$file_path|")
+        if [[ -z "$old_entry" ]]; then
+            files_to_sync+=("$file_path")
+            echo "🆕 Novo: $(basename "$file_path")"
+        else
+            local old_timestamp=$(echo "$old_entry" | cut -d'|' -f2)
+            if [[ "$timestamp" != "$old_timestamp" ]]; then
+                files_to_sync+=("$file_path")
+                echo "✏️ Modificado: $(basename "$file_path")"
+            fi
+        fi
+    done <<< "$current_cache"
+    
+    echo
+    if [[ ${#files_to_sync[@]} -eq 0 ]]; then
+        echo "✅ Nenhuma mudança detectada"
+    else
+        echo "📊 ${#files_to_sync[@]} arquivos precisam ser sincronizados"
+        echo
+        if confirm "Executar sincronização destes arquivos?"; then
+            check_and_sync_changes "$local_folder" "$destination"
+        fi
     fi
     
     pause
@@ -940,6 +1409,7 @@ sync_menu() {
             fi
             sync_options+=("reconfig|🔧 Reconfigurar")
             sync_options+=("manual|🔄 Sincronização Manual")
+            sync_options+=("test|🧪 Testar Sincronização (apenas verificar)")
         else
             sync_options+=("config|⚙️ Configurar Sincronização")
         fi
@@ -950,7 +1420,7 @@ sync_menu() {
             sed 's/^[^|]*|//' | \
             fzf --prompt="Sincronização > " \
                 --header="Sincronização automática de pastas" \
-                --height=12)
+                --height=14)
         
         [[ -z "$choice" ]] && return
         
@@ -975,6 +1445,9 @@ sync_menu() {
                     "manual")
                         manual_sync
                         ;;
+                    "test")
+                        test_sync_single
+                        ;;
                     "back")
                         return
                         ;;
@@ -985,6 +1458,202 @@ sync_menu() {
     done
 }
 
+export_functions_for_daemon() {
+    local daemon_script="$1"
+    cat > "$daemon_script" << 'EOF'
+#!/bin/bash
+# Script do daemon de sincronização
+
+# Configurações herdadas
+CONFIG_URL=""
+TOKEN_FILE=""
+SYNC_CACHE_FILE=""
+SYNC_LOG_FILE=""
+
+# Função para log do sync
+sync_log() {
+    local message="$1"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $message" >> "$SYNC_LOG_FILE"
+    
+    # Manter apenas as últimas 100 linhas do log
+    if [[ -f "$SYNC_LOG_FILE" ]]; then
+        tail -n 100 "$SYNC_LOG_FILE" > "$SYNC_LOG_FILE.tmp"
+        mv "$SYNC_LOG_FILE.tmp" "$SYNC_LOG_FILE"
+    fi
+}
+
+# Upload individual para sincronização
+perform_sync_upload() {
+    local file="$1"
+    local destination="$2"
+    local rel_path="$3"
+    
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -z "$token" ]] || [[ ! -f "$file" ]]; then
+        return 1
+    fi
+    
+    # Corrigir caminho para curl
+    local corrected_file="$file"
+    if [[ -d "/c/Windows" ]] && [[ ! -d "/mnt/c" ]]; then
+        if [[ "$file" =~ ^/c/ ]]; then
+            corrected_file=$(echo "$file" | sed 's|^/c|C:|')
+        fi
+    fi
+    
+    # Upload usando novo formato com path para preservar estrutura
+    local response=$(curl -s -X POST "$CONFIG_URL" \
+        -H "Authorization: Bearer $token" \
+        -F "arquivo[]=@$corrected_file" \
+        -F "pasta=$destination" \
+        -F "path=$rel_path" 2>&1)
+    
+    local curl_exit=$?
+    
+    # Verificar sucesso
+    if [[ $curl_exit -eq 0 ]] && echo "$response" | grep -q '"success":[[:space:]]*true'; then
+        return 0
+    else
+        sync_log "❌ Erro no upload: $response"
+        return 1
+    fi
+}
+
+# Verificar e sincronizar mudanças
+check_and_sync_changes() {
+    local local_folder="$1"
+    local destination="$2"
+    
+    if [[ ! -d "$local_folder" ]]; then
+        sync_log "❌ Pasta local não encontrada: $local_folder"
+        return 1
+    fi
+    
+    local current_cache=""
+    local old_cache=""
+    
+    # Carregar cache anterior
+    if [[ -f "$SYNC_CACHE_FILE" ]]; then
+        old_cache=$(cat "$SYNC_CACHE_FILE")
+    fi
+    
+    # Gerar cache atual (incluindo pastas vazias)
+    current_cache=$(find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort)
+    
+    # Comparar e encontrar arquivos modificados/novos
+    local files_to_sync=()
+    local change_detected=false
+    
+    while IFS='|' read -r file_path timestamp size; do
+        [[ -z "$file_path" ]] && continue
+        
+        local old_entry=$(echo "$old_cache" | grep "^$file_path|")
+        if [[ -z "$old_entry" ]]; then
+            # Arquivo novo
+            files_to_sync+=("$file_path")
+            sync_log "🆕 NOVO: $(basename "$file_path")"
+            change_detected=true
+        else
+            local old_timestamp=$(echo "$old_entry" | cut -d'|' -f2)
+            if [[ "$timestamp" != "$old_timestamp" ]]; then
+                # Arquivo modificado
+                files_to_sync+=("$file_path")
+                sync_log "✏️ MODIFICADO: $(basename "$file_path")"
+                change_detected=true
+            fi
+        fi
+    done <<< "$current_cache"
+    
+    # Se há mudanças, fazer upload dos arquivos modificados
+    if [[ ${#files_to_sync[@]} -gt 0 ]]; then
+        sync_log "🔄 SINCRONIZANDO ${#files_to_sync[@]} arquivo(s)..."
+        
+        local sync_success=0
+        local sync_failed=0
+        
+        for file in "${files_to_sync[@]}"; do
+            # Calcular caminho relativo para preservar estrutura
+            local rel_path=""
+            if command -v realpath >/dev/null 2>&1; then
+                rel_path=$(realpath --relative-to="$local_folder" "$file" 2>/dev/null || echo "${file#$local_folder/}")
+            else
+                rel_path="${file#$local_folder/}"
+                rel_path="${rel_path#/}"
+            fi
+            
+            sync_log "📤 Enviando: $rel_path"
+            
+            # Upload do arquivo
+            if perform_sync_upload "$file" "$destination" "$rel_path"; then
+                sync_log "✅ SUCESSO: $(basename "$file")"
+                ((sync_success++))
+            else
+                sync_log "❌ FALHA: $(basename "$file")"
+                ((sync_failed++))
+            fi
+            
+            # Pausa pequena entre uploads
+            sleep 0.2
+        done
+        
+        if [[ $sync_success -gt 0 ]]; then
+            sync_log "✅ CONCLUÍDO: $sync_success sucessos, $sync_failed falhas"
+            # Atualizar cache apenas se houve sucessos
+            echo "$current_cache" > "$SYNC_CACHE_FILE"
+        else
+            sync_log "❌ SINCRONIZAÇÃO FALHOU COMPLETAMENTE"
+        fi
+    fi
+}
+
+# Daemon principal
+sync_daemon() {
+    local local_folder="$1"
+    local destination="$2" 
+    local interval="$3"
+    
+    sync_log "🚀 DAEMON INICIADO"
+    sync_log "📁 Pasta: $local_folder"
+    sync_log "🎯 Destino: $destination"
+    sync_log "⏱️ Intervalo: ${interval}s"
+    
+    while true; do
+        # Verificar se processo pai ainda existe
+        if ! ps -p $PPID > /dev/null 2>&1; then
+            sync_log "⚠️ Processo pai morreu - encerrando daemon"
+            exit 0
+        fi
+        
+        # Verificar mudanças e sincronizar
+        check_and_sync_changes "$local_folder" "$destination"
+        
+        # Aguardar intervalo
+        sleep "$interval"
+    done
+}
+
+# Iniciar daemon com parâmetros passados
+if [[ "$1" == "start_daemon" ]]; then
+    CONFIG_URL="$2"
+    TOKEN_FILE="$3"
+    SYNC_CACHE_FILE="$4"
+    SYNC_LOG_FILE="$5"
+    LOCAL_FOLDER="$6"
+    DESTINATION="$7"
+    INTERVAL="$8"
+    
+    sync_daemon "$LOCAL_FOLDER" "$DESTINATION" "$INTERVAL"
+fi
+EOF
+    chmod +x "$daemon_script"
+}
+
+
 configure_sync() {
     clear_screen
     echo "⚙️ Configurar Sincronização"
@@ -994,6 +1663,7 @@ configure_sync() {
     echo "Menu Principal → Navegador de Arquivos → Selecionar pasta → Sincronizar"
     pause
 }
+
 
 start_sync() {
     local config=$(get_sync_config)
@@ -1013,22 +1683,40 @@ start_sync() {
         return
     fi
     
-    # Iniciar daemon
-    nohup bash -c "$(declare -f sync_daemon check_and_sync_changes perform_complete_folder_upload sync_log); sync_daemon '$local_folder' '$destination' '$interval'" > /dev/null 2>&1 &
-    local daemon_pid=$!
+    # Criar script temporário do daemon
+    local daemon_script="/tmp/upcode_sync_daemon_$$.sh"
+    export_functions_for_daemon "$daemon_script"
     
+    # Iniciar daemon em background
+    nohup "$daemon_script" "start_daemon" \
+        "$CONFIG_URL" \
+        "$TOKEN_FILE" \
+        "$SYNC_CACHE_FILE" \
+        "$SYNC_LOG_FILE" \
+        "$local_folder" \
+        "$destination" \
+        "$interval" > /dev/null 2>&1 &
+    
+    local daemon_pid=$!
     echo "$daemon_pid" > "$SYNC_PID_FILE"
     
+    # Limpar log anterior
+    > "$SYNC_LOG_FILE"
+    
     echo "✅ Sincronização iniciada!"
-    echo "📁 Pasta: $(basename "$local_folder")"
+    echo "📁 Pasta: $(basename "$local_folder")"  
     echo "🎯 Destino: $destination"
+    echo "⏱️ Intervalo: ${interval}s"
+    echo "🔍 PID: $daemon_pid"
+    
     pause
 }
 
+
 show_sync_status() {
     clear_screen
-    echo "📊 Status da Sincronização"
-    echo "═════════════════════════"
+    echo "📊 Status da Sincronização - TEMPO REAL"
+    echo "═════════════════════════════════════"
     
     if ! is_sync_running; then
         echo "🔴 Sincronização não está ativa"
@@ -1040,23 +1728,77 @@ show_sync_status() {
     local local_folder=$(echo "$config" | cut -d'|' -f1)
     local destination=$(echo "$config" | cut -d'|' -f2)
     local interval=$(echo "$config" | cut -d'|' -f3)
+    local pid=$(cat "$SYNC_PID_FILE" 2>/dev/null)
     
     echo "🟢 Status: ATIVO"
     echo "📁 Pasta: $(basename "$local_folder")"
     echo "🎯 Destino: $destination"
     echo "⏱️ Intervalo: $interval segundos"
+    echo "🔍 PID: $pid"
+    echo
+    echo "📋 MONITOR EM TEMPO REAL:"
+    echo "═══════════════════════════════════════"
+    echo "Pressione Ctrl+C para sair do monitor"
     echo
     
-    if [[ -f "$SYNC_LOG_FILE" ]]; then
-        echo "📋 Últimas atividades:"
-        echo "─────────────────────"
-        tail -10 "$SYNC_LOG_FILE" | while IFS= read -r line; do
-            echo "  $line"
-        done
-    fi
+    # Monitor em tempo real
+    local last_line_count=0
     
+    while true; do
+        # Verificar se ainda está rodando
+        if ! is_sync_running; then
+            echo
+            echo "❌ Sincronização parou de funcionar!"
+            break
+        fi
+        
+        # Contar linhas atuais do log
+        local current_line_count=0
+        if [[ -f "$SYNC_LOG_FILE" ]]; then
+            current_line_count=$(wc -l < "$SYNC_LOG_FILE" 2>/dev/null || echo 0)
+        fi
+        
+        # Se há novas linhas, mostrar apenas as novas
+        if [[ $current_line_count -gt $last_line_count ]]; then
+            local new_lines=$((current_line_count - last_line_count))
+            echo "📄 Novas atividades detectadas ($new_lines):"
+            echo "─────────────────────────────────"
+            tail -n "$new_lines" "$SYNC_LOG_FILE" 2>/dev/null | while IFS= read -r line; do
+                # Colorir diferentes tipos de mensagem
+                if [[ "$line" == *"🆕 NOVO:"* ]]; then
+                    echo "🟢 $line"
+                elif [[ "$line" == *"✏️ MODIFICADO:"* ]]; then
+                    echo "🟡 $line"
+                elif [[ "$line" == *"✅ SUCESSO:"* ]]; then
+                    echo "🟢 $line"
+                elif [[ "$line" == *"❌ FALHA:"* ]]; then
+                    echo "🔴 $line"
+                elif [[ "$line" == *"📤 Enviando:"* ]]; then
+                    echo "🔵 $line"
+                else
+                    echo "⚪ $line"
+                fi
+            done
+            echo
+            last_line_count=$current_line_count
+        fi
+        
+        # Aguardar 1 segundo antes de verificar novamente
+        sleep 1
+        
+        # Verificar se usuário quer sair (timeout de 0.1s)
+        if read -t 0.1 -n 1 key 2>/dev/null; then
+            if [[ "$key" == $'\x03' ]]; then # Ctrl+C
+                break
+            fi
+        fi
+    done
+    
+    echo
+    echo "📊 Monitor finalizado"
     pause
 }
+
 
 manual_sync() {
     local config=$(get_sync_config)
@@ -1076,18 +1818,34 @@ manual_sync() {
     echo "🎯 Destino: $destination"
     echo
     
-    if confirm "Executar sincronização manual?"; then
-        echo "🔄 Executando upload completo..."
-        if perform_complete_folder_upload "$local_folder" "$destination"; then
-            echo "✅ Sincronização manual concluída!"
-            # Atualizar cache
-            find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort > "$SYNC_CACHE_FILE"
-        fi
-    fi
+    echo "Escolha o tipo de sincronização:"
+    echo "1) 🔄 Incremental (apenas arquivos modificados)"
+    echo "2) 📤 Completa (todos os arquivos)"
+    echo
+    
+    read -p "Opção (1-2): " sync_type
+    
+    case "$sync_type" in
+        1)
+            echo "🔄 Executando sincronização incremental..."
+            check_and_sync_changes "$local_folder" "$destination"
+            echo "✅ Sincronização incremental concluída!"
+            ;;
+        2)
+            echo "📤 Executando upload completo..."
+            if upload_pasta_completa "$local_folder" "$destination" ""; then
+                echo "✅ Upload completo concluído!"
+                # Atualizar cache
+                find "$local_folder" -type f -exec stat -c '%n|%Y|%s' {} \; 2>/dev/null | sort > "$SYNC_CACHE_FILE"
+            fi
+            ;;
+        *)
+            echo "❌ Opção inválida"
+            ;;
+    esac
     
     pause
 }
-
 #===========================================
 # MENU PRINCIPAL
 #===========================================
@@ -1095,7 +1853,17 @@ manual_sync() {
 main_menu() {
     while true; do
         clear_screen
-        echo "📡 Sistema ativo e conectado"  # Informativo adicional
+        
+        # Carregar dados do usuário para exibição
+        load_user_info
+        
+        echo "📡 Sistema ativo e conectado"
+        if [[ -n "$USER_DISPLAY_NAME" ]]; then
+            echo "👤 Logado como: $USER_DISPLAY_NAME ($USER_NICENAME)"
+            echo "📧 Email: $USER_EMAIL | 🎭 Tipo: $USER_TYPE"
+        else
+            echo "👤 Status: Não logado"
+        fi
         echo
         
         # Verificar se há histórico
@@ -1115,13 +1883,16 @@ main_menu() {
         echo "   📦 Versão: $CURRENT_VERSION"
         echo "   🔄 Sincronização: $sync_status"
         echo "   📝 Histórico: $history_count itens"
+        if [[ ${#user_folders[@]} -gt 0 ]]; then
+            echo "   📁 Pastas disponíveis: ${#user_folders[@]}"
+        fi
         echo
         
         # Criar opções do menu
         local menu_options=(
             "browser|📁 Navegador de Arquivos"
-            "sync|🔄 Sincronização de Pasta ($sync_status)"
             "quick|⚡ Upload Rápido (último item)"
+            "sync|🔄 Sincronização de Pasta ($sync_status)"
             "history|📝 Histórico ($history_count itens)"
             "token|🔄 Renovar Token"
             "clean|🧹 Limpar Dados"
@@ -1131,7 +1902,7 @@ main_menu() {
         # Mostrar menu
         local choice=$(printf '%s\n' "${menu_options[@]}" | \
             sed 's/^[^|]*|//' | \
-            fzf --prompt="UPCODE v$CURRENT_VERSION > " \
+            fzf --prompt="UPCODE v$CURRENT_VERSION  | $USER_DISPLAY_NAME > " \
                 --header="Sistema de Upload de Arquivos - Selecione uma opção" \
                 --preview-window=hidden)
         
@@ -1159,75 +1930,129 @@ main_menu() {
 
 
 clean_data() {
-    clear_screen
-    echo "🧹 Limpar Dados"
-    echo "─────────────"
-    echo
-    
-    local clean_options=(
-        "token|🔑 Limpar Token"
-        "history|📝 Limpar Histórico"
-        "sync|🔄 Limpar Sincronização"
-        "version|🗂️ Limpar Cache de Versão"          # NOVO
-        "all|🗑️ Limpar TUDO"
-        "back|🔙 Voltar"
-    )
-    
-    local choice=$(printf '%s\n' "${clean_options[@]}" | \
-        sed 's/^[^|]*|//' | \
-        fzf --prompt="Limpar > " \
-            --height=10)
-    
-    for option in "${clean_options[@]}"; do
-        if [[ "$option" == *"|$choice" ]]; then
-            local action=$(echo "$option" | cut -d'|' -f1)
-            
-            case "$action" in
-                "token")
-                    if confirm "Limpar token?"; then
-                        rm -f "$TOKEN_FILE"
-                        echo "✅ Token removido!"
-                        sleep 1
-                    fi
-                    ;;
-                "history")
-                    if confirm "Limpar histórico?"; then
-                        rm -f "$HISTORY_FILE"
-                        echo "✅ Histórico limpo!"
-                        sleep 1
-                    fi
-                    ;;
-                "sync")
-                    if confirm "Limpar sincronização?"; then
-                        stop_sync
-                        rm -f "$SYNC_CONFIG_FILE" "$SYNC_CACHE_FILE" "$SYNC_LOG_FILE"
-                        echo "✅ Sincronização limpa!"
-                        sleep 1
-                    fi
-                    ;;
-                "version")                              # NOVO
-                    if confirm "Limpar cache de versão?"; then
-                        rm -f "$VERSION_FILE" "$HOME/.upcode_last_check"
-                        echo "✅ Cache de versão limpo!"
-                        sleep 1
-                    fi
-                    ;;
-                "all")
-                    if confirm "⚠️ LIMPAR TUDO?"; then
-                        stop_sync
-                        rm -f "$TOKEN_FILE" "$HISTORY_FILE" "$SYNC_CONFIG_FILE" "$SYNC_CACHE_FILE" "$SYNC_LOG_FILE" "$VERSION_FILE" "$HOME/.upcode_last_check"
-                        echo "✅ Todos os dados limpos!"
-                        sleep 2
-                    fi
-                    ;;
-                "back")
-                    return
-                    ;;
-            esac
-            break
+    while true; do
+        clear_screen
+        echo "🧹 Limpar Dados"
+        echo "──────────────"
+        echo
+        
+        if [[ -n "$USER_DISPLAY_NAME" ]]; then
+            echo "👤 Usuário atual: $USER_DISPLAY_NAME ($USER_NICENAME)"
+            echo
         fi
+        
+        local clean_options=(
+            "token|🔑 Limpar Token (força novo login)"
+            "history|📝 Limpar Histórico de uploads"
+            "sync|🔄 Limpar Configuração de Sincronização"
+            "folders|📁 Limpar Cache de Pastas"
+            "userinfo|👤 Limpar Dados do Usuário"
+            "all|🗑️ Limpar TUDO (reset completo)"
+            "back|🔙 Voltar"
+        )
+        
+        local choice=$(printf '%s\n' "${clean_options[@]}" | \
+            sed 's/^[^|]*|//' | \
+            fzf --prompt="Limpar > " \
+                --header="⚠️ Algumas ações forçarão novo login" \
+                --height=12)
+        
+        [[ -z "$choice" ]] && return
+        
+        for option in "${clean_options[@]}"; do
+            if [[ "$option" == *"|$choice" ]]; then
+                local action=$(echo "$option" | cut -d'|' -f1)
+                
+                case "$action" in
+                    "token")
+                        if confirm "⚠️ Limpar token? (forçará novo login)"; then
+                            rm -f "$TOKEN_FILE"
+                            echo "✅ Token removido!"
+                            sleep 1
+                            
+                            echo "🔄 Novo login necessário..."
+                            # Forçar novo login imediatamente
+                            do_login
+                            return  # Voltar ao menu principal após login
+                        fi
+                        ;;
+                    "history")
+                        if confirm "Limpar histórico de uploads?"; then
+                            rm -f "$HISTORY_FILE"
+                            echo "✅ Histórico limpo!"
+                            sleep 1
+                        fi
+                        ;;
+                    "sync")
+                        if confirm "Limpar configuração de sincronização?"; then
+                            # Parar sincronização se estiver rodando
+                            if is_sync_running; then
+                                echo "⏹️ Parando sincronização..."
+                                stop_sync
+                            fi
+                            rm -f "$SYNC_CONFIG_FILE" "$SYNC_CACHE_FILE" "$SYNC_LOG_FILE"
+                            echo "✅ Sincronização limpa!"
+                            sleep 1
+                        fi
+                        ;;
+                    "folders")
+                        if confirm "Limpar cache de pastas?"; then
+                            rm -f "$USER_FOLDERS_FILE"
+                            user_folders=()
+                            echo "✅ Cache de pastas limpo!"
+                            sleep 1
+                        fi
+                        ;;
+                    "userinfo")
+                        if confirm "Limpar dados do usuário?"; then
+                            rm -f "$USER_INFO_FILE"
+                            USER_DISPLAY_NAME=""
+                            USER_NICENAME=""
+                            USER_EMAIL=""
+                            USER_TYPE=""
+                            echo "✅ Dados do usuário limpos!"
+                            sleep 1
+                        fi
+                        ;;
+                    "all")
+                        if confirm "⚠️ LIMPAR TUDO? (reset completo - forçará novo login)"; then
+                            echo "🧹 Limpando todos os dados..."
+                            
+                            # Parar sincronização
+                            if is_sync_running; then
+                                echo "⏹️ Parando sincronização..."
+                                stop_sync
+                            fi
+                            
+                            # Remover todos os arquivos
+                            rm -f "$TOKEN_FILE" "$HISTORY_FILE" "$SYNC_CONFIG_FILE" "$SYNC_CACHE_FILE" "$SYNC_LOG_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE"
+                            
+                            # Limpar variáveis
+                            USER_DISPLAY_NAME=""
+                            USER_NICENAME=""
+                            USER_EMAIL=""
+                            USER_TYPE=""
+                            user_folders=()
+                            
+                            echo "✅ Todos os dados limpos!"
+                            sleep 1
+                            
+                            echo "🔄 Novo login necessário..."
+                            # Forçar novo login imediatamente
+                            do_login
+                            return  # Voltar ao menu principal após login
+                        fi
+                        ;;
+                    "back")
+                        return
+                        ;;
+                esac
+                break
+            fi
+        done
     done
 }
+
 
 #===========================================
 # FUNÇÃO PRINCIPAL (modificada apenas para adicionar verificação)
@@ -1250,12 +2075,19 @@ show_progress() {
 #===========================================
 # INÍCIO DIRETO DO PROGRAMA
 #===========================================
+self_update
 
-show_banner  # Agora mostra banner por 2 segundos
+show_banner
 check_dependencies
 
+# Verificar token APENAS UMA VEZ no início
 if ! check_token; then
+    echo "🔍 Token não encontrado ou inválido - fazendo login..."
     do_login
+else
+    echo "✅ Token válido encontrado"
+    load_user_folders
+    echo "📁 Pastas carregadas: ${#user_folders[@]}"
 fi
 
 main_menu
