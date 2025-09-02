@@ -20,8 +20,6 @@ load_remote_script() {
 
 echo "📦 Iniciando loading de arquivos..."
 
-# Carregar style
-
 load_remote_script "src/fzf_style.sh"
 set_fzf_style
 
