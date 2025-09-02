@@ -3,7 +3,7 @@
         # Configurações de interface em um array associativo para fácil manutenção
         declare -gA FZF_OPTS=(
             [height]="20%"                # Altura do menu
-            [border]="bold"            # Tipo de borda
+            [border]="bold"            # Tipo borda
             [margin]="1"                # Margem
             [color_fg]="#ffffff"          # fg: Branco (Texto principal)
             #[color_bg]="#222222"          # bg: Cinza escuro (Fundo)
