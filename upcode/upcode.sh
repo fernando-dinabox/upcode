@@ -18,36 +18,24 @@ load_remote_script() {
     fi
 }
 
-echo "📦 Carregando scripts remotamente..."
+echo "📦 Iniciando loading de arquivos..."
 
 # Carregar style
-echo "  🎨 Carregando estilo FZF..."
+
 load_remote_script "src/fzf_style.sh"
 set_fzf_style
 
 # Carregar os scripts da pasta src
-echo "  🔐 Carregando autenticação..."
 load_remote_script "src/auth.sh"
-
-echo "  🛠️  Carregando utilitários..."
 load_remote_script "src/utils.sh"
-
-echo "  📦 Carregando dependências..."
 load_remote_script "src/dependencies.sh"
-
-echo "  📋 Carregando menus..."
 load_remote_script "src/menus.sh"
-
-echo "  🧭 Carregando navegação..."
 load_remote_script "src/navigation.sh"
-
-echo "  📤 Carregando uploads..."
 load_remote_script "src/uploads.sh"
-
-echo "  🔄 Carregando sincronização..."
 load_remote_script "src/sync.sh"
 
-echo "✅ Todos os scripts carregados!"
+echo "✅ Carregamento concluido!"
+echo "✅ Iniciando Upcode!"
 echo
 
 CURRENT_VERSION="1.0.2"
