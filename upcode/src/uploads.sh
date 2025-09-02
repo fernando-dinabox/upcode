@@ -611,7 +611,7 @@ perform_upload() {
     echo "🔧 COMANDO CURL DETALHADO:"
     echo "─────────────────────────"
     echo "  📡 URL: $CONFIG_URL"
-    echo "  🔑 Token: ${token:0:20}..."
+    # echo "  🔑 Token: ${token:0:20}..."
     echo "  📄 Arquivo: $filename"
     echo "  📁 Pasta destino: $folder"
     if [[ "$with_delete" == "true" ]]; then
@@ -634,15 +634,15 @@ perform_upload() {
     fi
     
     # Mostrar comando curl mascarado
-    echo
-    echo "🔍 PARÂMETROS ENVIADOS:"
-    echo "  -H \"Authorization: Bearer ${token:0:10}...***\""
-    echo "  -F \"arquivo[]=@$filename\""
-    echo "  -F \"pasta=$folder\""
-    if [[ "$with_delete" == "true" ]]; then
-        echo "  -F \"with_delete=true\""
-    fi
-    echo
+    # echo
+    # echo "🔍 PARÂMETROS ENVIADOS:"
+    # echo "  -H \"Authorization: Bearer ${token:0:10}...***\""
+    # echo "  -F \"arquivo[]=@$filename\""
+    # echo "  -F \"pasta=$folder\""
+    # if [[ "$with_delete" == "true" ]]; then
+    #     echo "  -F \"with_delete=true\""
+    # fi
+    # echo
     
     # Executar upload
     echo "⏳ Executando upload..."
@@ -700,10 +700,12 @@ perform_upload() {
     echo
     if echo "$response" | grep -q '"success":[[:space:]]*true'; then
         echo "🎉 ✅ SUCESSO - $filename enviado com êxito!"
+
         if [[ "$with_delete" == "true" ]]; then
             echo "🗑️ Arquivos antigos foram removidos do destino"
         fi
         echo "📁 Arquivo enviado para: $folder"
+        sleep 1
         return 0
     else
         echo "💥 ❌ FALHA - $filename não foi enviado"
