@@ -608,7 +608,7 @@ perform_upload() {
     echo "🔄 Enviando $filename para pasta: $folder"
     
     echo
-    echo "🔧 COMANDO CURL DETALHADO:"
+    echo "🔧 Detalhes do envio:"
     echo "─────────────────────────"
     echo "  📡 URL: $CONFIG_URL"
     # echo "  🔑 Token: ${token:0:20}..."
@@ -645,7 +645,7 @@ perform_upload() {
     # echo
     
     # Executar upload
-    echo "⏳ Executando upload..."
+    #echo "⏳ Executando upload..."
     local start_time=$(date +%s)
     local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
@@ -653,12 +653,12 @@ perform_upload() {
     local duration=$((end_time - start_time))
     
     echo "⌛ Tempo de execução: ${duration}s"
-    echo "🔍 Exit code: $curl_exit"
+    #echo "🔍 Exit code: $curl_exit"
     
     # Análise detalhada da resposta
-    echo
-    echo "📋 ANÁLISE DA RESPOSTA:"
-    echo "─────────────────────"
+    # echo
+    # echo "📋 ANÁLISE DA RESPOSTA:"
+    # echo "─────────────────────"
     
     if [[ $curl_exit -ne 0 ]]; then
         echo "❌ ERRO CURL (Exit Code: $curl_exit)"
@@ -676,14 +676,14 @@ perform_upload() {
     
     # Verificar se é JSON válido
     if [[ "$response" =~ ^\{.*\}$ ]] || [[ "$response" =~ ^\[.*\]$ ]]; then
-        echo "✅ Resposta é JSON válido"
+        #echo "✅ Resposta é JSON válido"
         
         # Extrair informações do JSON
         local success_status=$(echo "$response" | grep -o '"success":[[:space:]]*[^,}]*' | sed 's/.*"success":[[:space:]]*\([^,}]*\).*/\1/')
         local message=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
         
-        echo "   🎯 Status: ${success_status:-"não encontrado"}"
-        echo "   💬 Mensagem: ${message:-"não encontrada"}"
+        #echo "   🎯 Status: ${success_status:-"não encontrado"}"
+        #echo "   💬 Mensagem: ${message:-"não encontrada"}"
         
         # # Mostrar resposta completa para debug
         # echo
