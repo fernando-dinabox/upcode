@@ -685,11 +685,11 @@ perform_upload() {
         echo "   🎯 Status: ${success_status:-"não encontrado"}"
         echo "   💬 Mensagem: ${message:-"não encontrada"}"
         
-        # Mostrar resposta completa para debug
-        echo
-        echo "📄 RESPOSTA COMPLETA:"
-        echo "─────────────────────"
-        echo "$response" | head -20
+        # # Mostrar resposta completa para debug
+        # echo
+        # echo "📄 RESPOSTA COMPLETA:"
+        # echo "─────────────────────"
+        # echo "$response" | head -20
         
     else
         echo "⚠️ Resposta NÃO é JSON válido"
@@ -705,7 +705,8 @@ perform_upload() {
             echo "🗑️ Arquivos antigos foram removidos do destino"
         fi
         echo "📁 Arquivo enviado para: $folder"
-        sleep 1
+        echo
+        pause             
         return 0
     else
         echo "💥 ❌ FALHA - $filename não foi enviado"
@@ -717,7 +718,7 @@ perform_upload() {
         fi
         
         echo
-        pause
+        pause           
         return 1
     fi
 }
