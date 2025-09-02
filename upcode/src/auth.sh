@@ -38,10 +38,10 @@ do_login() {
         -d "username=$username" \
         -d "password=$password")
     
-    # echo "🔍 Debug - Resposta do servidor:"
-    # echo "$response" | head -10
-    # sleep 3
-    # echo
+    echo "🔍 Debug - Resposta do servidor:"
+    echo "$response" | head -10
+    sleep 3
+    echo
     
     # Extrair token
     local token=$(echo "$response" | grep -o '"token":[[:space:]]*"[^"]*"' | sed 's/.*"token":[[:space:]]*"\([^"]*\)".*/\1/')
@@ -66,8 +66,8 @@ do_login() {
         
         # Carregar pastas para verificar
         load_user_folders
-        # echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
-        # printf '   - "%s"\n' "${user_folders[@]}"
+        echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
+        printf '   - "%s"\n' "${user_folders[@]}"
         
         sleep 1
         return 0
@@ -112,7 +112,7 @@ load_user_folders() {
         fi
     fi
     
-    # echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
@@ -121,7 +121,7 @@ load_user_folders() {
 extract_user_info() {
     local response="$1"
     
-    # echo "🔍 Debug - Extraindo dados do usuário..."
+    echo "🔍 Debug - Extraindo dados do usuário..."
     
     # Extrair dados do usuário do JSON
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
@@ -219,14 +219,14 @@ ensure_valid_login() {
 extract_user_folders() {
     local response="$1"
     
-    #echo "🔍 Debug - Extraindo pastas..."
+    echo "🔍 Debug - Extraindo pastas..."
     
     # Método mais robusto para extrair as pastas do JSON
     # Primeiro, extrair todo o array folders
     local folders_section=$(echo "$response" | sed -n '/"folders":/,/\]/p')
     
-    #echo "🔍 Debug - Seção folders:"
-    #echo "$folders_section"
+    echo "🔍 Debug - Seção folders:"
+    echo "$folders_section"
     
     # Limpar arquivo anterior
     > "$USER_FOLDERS_FILE"
@@ -249,8 +249,8 @@ extract_user_folders() {
         done < "$USER_FOLDERS_FILE"
     fi
     
-    # echo "📁 Pastas extraídas e carregadas: ${#user_folders[@]}"
-    # printf '   📂 "%s"\n' "${user_folders[@]}"
+    echo "📁 Pastas extraídas e carregadas: ${#user_folders[@]}"
+    printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
 load_user_folders() {
@@ -262,7 +262,7 @@ load_user_folders() {
     fi
     
     
-    # echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
 }
 
 
