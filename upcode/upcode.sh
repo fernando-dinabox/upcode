@@ -33,7 +33,7 @@ load_remote_script "src/uploads.sh"
 load_remote_script "src/sync.sh"
 
 echo "✅ Carregamento concluido!"
-echo "✅ Iniciando Upcode!"
+echo "Iniciando Upcode!"
 echo
 
 CURRENT_VERSION="1.0.2"
