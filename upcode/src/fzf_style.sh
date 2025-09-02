@@ -25,8 +25,6 @@
             [prompt]="> "                 # Texto do prompt
         )
 
-        ff6347
-
         # Monta FZF_DEFAULT_OPTS a partir do array
         FZF_DEFAULT_OPTS="--height=${FZF_OPTS[height]} \
             --border=${FZF_OPTS[border]} \
