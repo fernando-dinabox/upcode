@@ -1,5 +1,4 @@
 #!/bin/bash
-# filepath: c:\Users\Dinabox\Desktop\main_01_01\main_01_09\upcode\upcode.sh
 
 # Base URL do repositório
 BASE_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode"
@@ -36,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.0.2"
+CURRENT_VERSION="1.0.5"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
