@@ -489,15 +489,15 @@ upload_pasta_completa() {
         # DEBUG: Mostrar comando curl completo
         echo
         #echo "🔧 DEBUG - Array completo do curl_cmd:"
-        for i in "${!curl_cmd[@]}"; do
-            if [[ "${curl_cmd[$i]}" == *"Authorization: Bearer"* ]]; then
-                #echo "  [$i]: 'Authorization: Bearer ${token:0:10}...***'"
-            elif [[ "${curl_cmd[$i]}" == *"@"* ]]; then
-                #echo "  [$i]: 'arquivo[]=@$(basename "${curl_cmd[$i]#*@}")'"
-            else
-                #echo "  [$i]: '${curl_cmd[$i]}'"
-            fi
-        done
+        # for i in "${!curl_cmd[@]}"; do
+        #     if [[ "${curl_cmd[$i]}" == *"Authorization: Bearer"* ]]; then
+        #         #echo "  [$i]: 'Authorization: Bearer ${token:0:10}...***'"
+        #     elif [[ "${curl_cmd[$i]}" == *"@"* ]]; then
+        #         #echo "  [$i]: 'arquivo[]=@$(basename "${curl_cmd[$i]#*@}")'"
+        #     else
+        #         #echo "  [$i]: '${curl_cmd[$i]}'"
+        #     fi
+        # done
         echo
         
         # Executar upload
