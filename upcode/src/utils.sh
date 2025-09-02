@@ -63,13 +63,6 @@ confirm() {
     [[ "$response" =~ ^[sS]$ ]]
 }
 
-clear_screen() {
-    clear
-    echo "UPCODE v$CURRENT_VERSION - Sistema de Upload"
-    echo "═════════════════════════════"
-    echo
-}
-
 
 normalize_path() {
     local path="$1"
