@@ -483,7 +483,7 @@ upload_pasta_completa() {
         # Adicionar path apenas se não estiver vazio
         if [[ -n "$dest_path" && "$dest_path" != "." ]]; then
             curl_cmd+=(-F "path=$dest_path")
-            echo "📁 Caminho enviado: $dest_path"
+            echo "📁 Adicionando path: $dest_path"
         fi
         
         # DEBUG: Mostrar comando curl completo
@@ -560,9 +560,9 @@ upload_pasta_completa() {
     fi
     echo "║ ✅ Sucessos: $success_count"
     echo "║ ❌ Erros: $error_count" 
-    #echo "║ 📊 Total processado: $upload_count"
+    echo "║ 📊 Total processado: $upload_count"
     if [[ $upload_count -gt 0 ]]; then
-        #echo "║ 📈 Taxa de sucesso: $(( success_count * 100 / upload_count ))%"
+        echo "║ 📈 Taxa de sucesso: $(( success_count * 100 / upload_count ))%"
     fi
     echo "╚══════════════════════════════════════════════════════════════════════╝"
     
