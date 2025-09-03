@@ -97,6 +97,8 @@ load_user_folders() {
         
         if echo "$response" | grep -q '"success":[[:space:]]*true'; then
             extract_user_folders "$response"
+            # NOVO: Também extrair dados do usuário se disponível
+            extract_user_info "$response" 2>/dev/null || true
         fi
     fi
     
@@ -108,16 +110,27 @@ load_user_folders() {
 extract_user_info() {
     local response="$1"
     
-    mkdir -p "$UPCODE_DIR"
+    # Verificar se response tem conteúdo
+    if [[ -z "$response" ]]; then
+        return 1
+    fi
+    
+    # Tentar criar diretório, mas não falhar se não conseguir
+    mkdir -p "$UPCODE_DIR" 2>/dev/null || true
     
     echo "🔍 Debug - Extraindo dados do usuário..."
     
-    # Extrair dados básicos
-    USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
-    USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/')
-    USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/')
-    USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/')
-    USER_CAN_DELETE=$(echo "$response" | grep -o '"can_delete":[[:space:]]*[^,}]*' | sed 's/.*"can_delete":[[:space:]]*\([^,}]*\).*/\1/')
+    # Extrair dados básicos com verificação
+    USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
+    USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
+    USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
+    USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
+    USER_CAN_DELETE=$(echo "$response" | grep -o '"can_delete":[[:space:]]*[^,}]*' | sed 's/.*"can_delete":[[:space:]]*\([^,}]*\).*/\1/' 2>/dev/null || echo "")
+    
+    # Só continuar se conseguiu extrair pelo menos o display_name
+    if [[ -z "$USER_DISPLAY_NAME" ]]; then
+        return 1
+    fi
     
     # Extrair array de pastas restritas e criar string
     USER_CANNOT_DELETE_FOLDERS=()
