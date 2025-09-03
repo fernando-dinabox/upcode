@@ -76,40 +76,33 @@ do_login() {
 }
 
 load_user_folders() {
-    user_folders=()
-    
-    # Tentar carregar do arquivo primeiro
-    if [[ -f "$USER_FOLDERS_FILE" ]]; then
-        while IFS= read -r folder; do
-            [[ -n "$folder" ]] && user_folders+=("$folder")
-        done < "$USER_FOLDERS_FILE"
+    # Se já temos pastas em memória, não fazer nada
+    if [[ ${#user_folders[@]} -gt 0 ]]; then
+        echo "🔍 Debug load_user_folders - Pastas já em memória: ${#user_folders[@]}"
+        printf '   📂 "%s"\n' "${user_folders[@]}"
+        return 0
     fi
     
-    # recarregar via login
-    if [[ ${#user_folders[@]} -eq 0 ]]; then
-        local token=""
-        if [[ -f "$TOKEN_FILE" ]]; then
-            token=$(cat "$TOKEN_FILE")
-        fi
+    # Se não tem pastas, tentar recarregar do servidor
+    local token=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        token=$(cat "$TOKEN_FILE")
+    fi
+    
+    if [[ -n "$token" ]]; then
+        echo "🔧 Recarregando pastas do servidor..."
+        local response=$(curl -s -X POST "$CONFIG_URL" \
+            -H "Authorization: Bearer $token" \
+            -d "action=update_folders")
         
-        if [[ -n "$token" ]]; then
-            echo "🔧 Recarregando pastas do servidor..."
-            local response=$(curl -s -X POST "$CONFIG_URL" \
-                -H "Authorization: Bearer $token" \
-                -d "action=update_folders")
-            
-            if echo "$response" | grep -q '"success":[[:space:]]*true'; then
-                # Re-extrair pastas
-                extract_user_folders "$response"
-                extract_user_info "$response"
-            fi
+        if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+            extract_user_folders "$response"
         fi
     fi
     
     echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
-
 
 extract_user_info() {
     local response="$1"
@@ -232,7 +225,6 @@ ensure_valid_login() {
     fi
 }
 
-
 extract_user_folders() {
     local response="$1"
     
@@ -262,10 +254,10 @@ extract_user_folders() {
     
     rm -f "$temp_file"
     
-    echo "📁 Pastas extraídas para sessão: ${#user_folders[@]}"
+    # NÃO SALVAR EM ARQUIVO - APENAS EM MEMÓRIA
+    echo "📁 Pastas extraídas para MEMÓRIA: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
-
 load_user_folders() {
     user_folders=()
     if [[ -f "$USER_FOLDERS_FILE" ]]; then
@@ -294,13 +286,13 @@ renew_token() {
         # Limpar APENAS o token
         rm -f "$TOKEN_FILE"
         
-        # Limpar variáveis
+        # Limpar variáveis EM MEMÓRIA
         USER_DISPLAY_NAME=""
         USER_NICENAME=""
         USER_EMAIL=""
         USER_TYPE=""
         USER_CAN_DELETE=""
-        user_folders=()
+        user_folders=()  # ← Limpar array de pastas
         
         # Forçar novo login
         do_login
