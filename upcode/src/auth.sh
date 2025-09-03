@@ -11,6 +11,8 @@ check_token() {
     fi
     return 1
 }
+
+
 do_login() {
     echo "🔐 Login necessário"
     echo "─────────────────"
@@ -45,7 +47,7 @@ do_login() {
         echo "$token" > "$TOKEN_FILE"
         chmod 600 "$TOKEN_FILE"
         
-        # Extrair dados APENAS para variáveis (não salvar arquivos)
+        # CORREÇÃO: Extrair dados na ordem correta
         extract_user_info "$response"
         extract_user_folders "$response"
         
@@ -58,7 +60,11 @@ do_login() {
         echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
         printf '   - "%s"\n' "${user_folders[@]}"
         
-        sleep 1
+        # PAUSA PARA VER RESULTADO
+        echo
+        echo "Pressione ENTER para continuar..."
+        read -r
+        
         return 0
     else
         echo "❌ Falha na autenticação!"
@@ -68,7 +74,6 @@ do_login() {
         exit 1
     fi
 }
-
 
 load_user_folders() {
     user_folders=()
@@ -239,19 +244,28 @@ extract_user_folders() {
     echo "🔍 Debug - Seção folders:"
     echo "$folders_section"
     
-    # Carregar pastas APENAS no array (não salvar arquivo)
+    # CORREÇÃO: Limpar array antes de preencher
     user_folders=()
-    echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' | while read -r folder; do
+    
+    # NOVA ABORDAGEM: Usar um loop diferente
+    local temp_file=$(mktemp)
+    echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' > "$temp_file"
+    
+    while IFS= read -r folder; do
         if [[ "$folder" != "folders" && -n "$folder" ]]; then
             # Decodificar caracteres unicode simples
             folder=$(echo "$folder" | sed 's/\\u00e1/á/g; s/\\u00e9/é/g; s/\\u00ed/í/g; s/\\u00f3/ó/g; s/\\u00fa/ú/g; s/\\u00e7/ç/g; s/\\u00e3/ã/g; s/\\u00f5/õ/g')
             user_folders+=("$folder")
+            echo "📂 Adicionada pasta: '$folder'"
         fi
-    done
+    done < "$temp_file"
+    
+    rm -f "$temp_file"
     
     echo "📁 Pastas extraídas para sessão: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
+
 load_user_folders() {
     user_folders=()
     if [[ -f "$USER_FOLDERS_FILE" ]]; then
