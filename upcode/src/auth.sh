@@ -181,7 +181,10 @@ confirm_delete_option() {
 load_user_info() {
     if [[ -f "$USER_INFO_FILE" ]]; then
         source "$USER_INFO_FILE"
-        echo "🔍 LOAD DEBUG: USER_CANNOT_DELETE_FOLDERS_STR='$USER_CANNOT_DELETE_FOLDERS_STR'"
+        # Só mostrar debug se não for chamado silenciosamente
+        if [[ "$1" != "silent" ]]; then
+            echo "🔍 LOAD DEBUG: USER_CANNOT_DELETE_FOLDERS_STR='$USER_CANNOT_DELETE_FOLDERS_STR'"
+        fi
         # Recriar array das pastas restritas
         USER_CANNOT_DELETE_FOLDERS=()
         if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]] && [[ "$USER_CANNOT_DELETE_FOLDERS_STR" != "" ]]; then
