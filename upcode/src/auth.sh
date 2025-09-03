@@ -118,24 +118,22 @@ load_user_folders() {
 }
 
 
-
 extract_user_info() {
     local response="$1"
     
-    echo "🔍 Debug - Extraindo dados do usuário..."
-    echo "🔍 RESPOSTA COMPLETA DO SERVIDOR:"  # ← ADICIONAR ESTA LINHA
-    echo "$response"                          # ← ADICIONAR ESTA LINHA
-    echo "🔍 FIM DA RESPOSTA"                # ← ADICIONAR ESTA LINHA
+    mkdir -p "$UPCODE_DIR"
     
-    # Extrair dados básicos do usuário
+    echo "🔍 Debug - Extraindo dados do usuário..."
+    
+    # Extrair dados básicos
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_CAN_DELETE=$(echo "$response" | grep -o '"can_delete":[[:space:]]*[^,}]*' | sed 's/.*"can_delete":[[:space:]]*\([^,}]*\).*/\1/')
     
-    # Extrair pastas restritas (ORDEM CORRETA)
-    USER_CANNOT_DELETE_FOLDERS=()  # ← PRIMEIRO LIMPA
+    # Extrair array de pastas restritas e criar string
+    USER_CANNOT_DELETE_FOLDERS=()
     local cannot_delete_list=$(echo "$response" | grep -o '"cannot_delete_folders":\[[^]]*\]')
     if [[ -n "$cannot_delete_list" ]]; then
         while IFS= read -r folder; do
@@ -143,17 +141,26 @@ extract_user_info() {
         done < <(echo "$cannot_delete_list" | grep -o '"[^"]*"' | sed 's/"//g' | grep -v 'cannot_delete_folders')
     fi
     
-    # Salvar no arquivo (INCLUIR AS PASTAS RESTRITAS)
+    # Criar string separada por espaços
+    USER_CANNOT_DELETE_FOLDERS_STR="${USER_CANNOT_DELETE_FOLDERS[*]}"
+    
+    # Salvar arquivo
     cat > "$USER_INFO_FILE" << EOF
 USER_DISPLAY_NAME="$USER_DISPLAY_NAME"
 USER_NICENAME="$USER_NICENAME"
 USER_EMAIL="$USER_EMAIL"
 USER_TYPE="$USER_TYPE"
 USER_CAN_DELETE="$USER_CAN_DELETE"
-USER_CANNOT_DELETE_FOLDERS_STR="${USER_CANNOT_DELETE_FOLDERS[*]}"
+USER_CANNOT_DELETE_FOLDERS_STR="$USER_CANNOT_DELETE_FOLDERS_STR"
 EOF
     chmod 600 "$USER_INFO_FILE"
+    
+    echo "🔍 Dados salvos:"
+    echo "  USER_CAN_DELETE = '$USER_CAN_DELETE'"
+    echo "  USER_CANNOT_DELETE_FOLDERS_STR = '$USER_CANNOT_DELETE_FOLDERS_STR'"
 }
+
+
 
 confirm_delete_option() {
     local upload_type="$1"
@@ -317,15 +324,29 @@ renew_token() {
 pasta_pode_deletar() {
     local pasta_alvo="$1"
     
-    # Garantir que temos os dados carregados
-    [[ -z "$USER_CAN_DELETE" ]] && load_user_info "silent"
+    echo "🔍 DEBUG pasta_pode_deletar:"
+    echo "  Pasta testada: '$pasta_alvo'"
+    echo "  USER_CAN_DELETE: '$USER_CAN_DELETE'"
+    echo "  USER_CANNOT_DELETE_FOLDERS_STR: '$USER_CANNOT_DELETE_FOLDERS_STR'"
     
-    # Se não tem permissão global, não pode deletar
-    [[ "$USER_CAN_DELETE" != "true" ]] && return 1
+    # Se não tem permissão global
+    if [[ "$USER_CAN_DELETE" != "true" ]]; then
+        echo "  ❌ Sem permissão global de delete"
+        return 1
+    fi
     
-    # Se a pasta está na lista de restrições, não pode deletar  
-    [[ "$USER_CANNOT_DELETE_FOLDERS_STR" == *"$pasta_alvo"* ]] && return 1
+    # Verificar se a pasta está nas restrições
+    if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
+        # Separar as pastas e verificar uma por uma
+        IFS=' ' read -ra restricted_folders <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
+        for restricted in "${restricted_folders[@]}"; do
+            if [[ "$pasta_alvo" == "$restricted" ]]; then
+                echo "  ❌ Pasta '$pasta_alvo' está restrita"
+                return 1
+            fi
+        done
+    fi
     
-    # Se chegou aqui, pode deletar
+    echo "  ✅ Pasta '$pasta_alvo' pode ser deletada"
     return 0
 }
