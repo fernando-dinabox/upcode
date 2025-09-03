@@ -159,6 +159,11 @@ confirm_delete_option() {
     local upload_type="$1"
     local target_folder="$2"
     
+    # DEBUG: Mostrar dados antes da verificação
+    echo "🔍 DEBUG: USER_CAN_DELETE='$USER_CAN_DELETE'"
+    echo "🔍 DEBUG: USER_CANNOT_DELETE_FOLDERS_STR='$USER_CANNOT_DELETE_FOLDERS_STR'"
+    echo "🔍 DEBUG: Verificando pasta: '$target_folder'"
+    
     # Usar a função SIMPLES que lê direto do arquivo
     if ! pasta_pode_deletar "$target_folder"; then
         echo
@@ -308,32 +313,19 @@ renew_token() {
     fi
 }
 
-
-# Função SIMPLES para verificar se pode deletar - lê direto do arquivo
+# Função que verifica se pode deletar
 pasta_pode_deletar() {
     local pasta_alvo="$1"
     
-    # Ler direto do arquivo de usuário
-    if [[ ! -f "$USER_INFO_FILE" ]]; then
-        return 1  # Arquivo não existe = não pode deletar
-    fi
+    # Garantir que temos os dados carregados
+    [[ -z "$USER_CAN_DELETE" ]] && load_user_info "silent"
     
-    # Extrair can_delete direto do arquivo
-    local can_delete=$(grep "USER_CAN_DELETE=" "$USER_INFO_FILE" | cut -d'"' -f2)
-    if [[ "$can_delete" != "true" ]]; then
-        return 1  # Não tem permissão global
-    fi
+    # Se não tem permissão global, não pode deletar
+    [[ "$USER_CAN_DELETE" != "true" ]] && return 1
     
-    # Extrair lista de pastas restritas direto do arquivo
-    local pastas_restritas=$(grep "USER_CANNOT_DELETE_FOLDERS_STR=" "$USER_INFO_FILE" | cut -d'"' -f2)
+    # Se a pasta está na lista de restrições, não pode deletar  
+    [[ "$USER_CANNOT_DELETE_FOLDERS_STR" == *"$pasta_alvo"* ]] && return 1
     
-    # Se não tem restrições, pode deletar
-    [[ -z "$pastas_restritas" ]] && return 0
-    
-    # Verificar se a pasta está na lista (busca simples por palavra)
-    if echo "$pastas_restritas" | grep -q "$pasta_alvo"; then
-        return 1  # Pasta restrita
-    fi
-    
-    return 0  # Pode deletar
+    # Se chegou aqui, pode deletar
+    return 0
 }
