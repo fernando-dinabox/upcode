@@ -207,7 +207,7 @@ load_user_info() {
 
 
 ensure_valid_login() {
-    load_user_info
+    load_user_info "silent"    
     
     # Se não tem pastas OU dados de usuário, fazer novo login
     if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
