@@ -159,8 +159,8 @@ confirm_delete_option() {
     local upload_type="$1"
     local target_folder="$2"
     
-    # Usar a função simples para verificar
-    if ! can_delete_in_folder "$target_folder"; then
+    # Usar a função SIMPLES que lê direto do arquivo
+    if ! pasta_pode_deletar "$target_folder"; then
         echo
         echo "🚫 EXCLUSÃO NÃO PERMITIDA"
         echo "Upload será feito SEM exclusão"
@@ -309,25 +309,31 @@ renew_token() {
 }
 
 
-# Função simples que verifica se pode deletar na pasta
-can_delete_in_folder() {
-    local target_folder="$1"
+# Função SIMPLES para verificar se pode deletar - lê direto do arquivo
+pasta_pode_deletar() {
+    local pasta_alvo="$1"
     
-    # Se não tem permissão global, retorna falso
-    [[ "$USER_CAN_DELETE" != "true" ]] && return 1
-    
-    # Carregar dados atuais do usuário se necessário
-    [[ -z "$USER_DISPLAY_NAME" ]] && load_user_info "silent"
-    
-    # Recriar array se estiver vazio
-    if [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 && -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
-        IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
+    # Ler direto do arquivo de usuário
+    if [[ ! -f "$USER_INFO_FILE" ]]; then
+        return 1  # Arquivo não existe = não pode deletar
     fi
     
-    # Verificar se a pasta está na lista de restrições
-    for restricted in "${USER_CANNOT_DELETE_FOLDERS[@]}"; do
-        [[ "$target_folder" == "$restricted" ]] && return 1
-    done
+    # Extrair can_delete direto do arquivo
+    local can_delete=$(grep "USER_CAN_DELETE=" "$USER_INFO_FILE" | cut -d'"' -f2)
+    if [[ "$can_delete" != "true" ]]; then
+        return 1  # Não tem permissão global
+    fi
+    
+    # Extrair lista de pastas restritas direto do arquivo
+    local pastas_restritas=$(grep "USER_CANNOT_DELETE_FOLDERS_STR=" "$USER_INFO_FILE" | cut -d'"' -f2)
+    
+    # Se não tem restrições, pode deletar
+    [[ -z "$pastas_restritas" ]] && return 0
+    
+    # Verificar se a pasta está na lista (busca simples por palavra)
+    if echo "$pastas_restritas" | grep -q "$pasta_alvo"; then
+        return 1  # Pasta restrita
+    fi
     
     return 0  # Pode deletar
 }
