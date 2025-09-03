@@ -108,6 +108,7 @@ load_user_folders() {
             if echo "$response" | grep -q '"success":[[:space:]]*true'; then
                 # Re-extrair pastas
                 extract_user_folders "$response"
+                extract_user_info "$response"
             fi
         fi
     fi
@@ -158,7 +159,7 @@ confirm_delete_option() {
     local upload_type="$1"  # "arquivo" ou "pasta"
     local target_folder="$2"  # NOVO: pasta onde será feito o upload
     [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 ]] && load_user_info "silent"
-    
+
     # Verificar se tem permissão global
     if [[ "$USER_CAN_DELETE" != "true" ]]; then
         return 1  # Sem permissão global
@@ -205,10 +206,10 @@ confirm_delete_option() {
 load_user_info() {
     if [[ -f "$USER_INFO_FILE" ]]; then
         source "$USER_INFO_FILE"
-        
+        echo "🔍 LOAD DEBUG: USER_CANNOT_DELETE_FOLDERS_STR='$USER_CANNOT_DELETE_FOLDERS_STR'"
         # Recriar array das pastas restritas
         USER_CANNOT_DELETE_FOLDERS=()
-        if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
+        if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]] && [[ "$USER_CANNOT_DELETE_FOLDERS_STR" != "" ]]; then
             IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
         fi
         
