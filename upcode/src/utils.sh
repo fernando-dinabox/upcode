@@ -229,3 +229,35 @@ show_progress() {
     done
     printf "\r%s ✅\n" "$message"
 }
+
+
+limpar_tudo() {
+    echo "🧹 Limpando todos os dados do upcode..."
+    
+    # Remover pasta inteira
+    if [[ -d "$UPCODE_DIR" ]]; then
+        rm -rf "$UPCODE_DIR"
+        echo "✅ Pasta $UPCODE_DIR removida"
+    fi
+    
+    # Remover arquivos antigos soltos 
+    rm -f "$HOME/.upcode_token" 2>/dev/null
+    rm -f "$HOME/.upcode_history" 2>/dev/null
+    rm -f "$HOME/.upcode_user_folders" 2>/dev/null
+    rm -f "$HOME/.upcode_user_info" 2>/dev/null
+    rm -f "$HOME/.upcode_sync.log" 2>/dev/null
+    rm -f "$HOME/.upcode_sync.cache" 2>/dev/null
+    
+    # Limpar variáveis
+    USER_DISPLAY_NAME=""
+    USER_NICENAME=""
+    USER_EMAIL=""
+    USER_TYPE=""
+    USER_CAN_DELETE=""
+    USER_CANNOT_DELETE_FOLDERS_STR=""
+    USER_CANNOT_DELETE_FOLDERS=()
+    user_folders=()
+    
+    echo "✅ Limpeza completa realizada - faça login novamente"
+    pause
+}
