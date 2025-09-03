@@ -35,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.2.4"
+CURRENT_VERSION="1.2.5"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
