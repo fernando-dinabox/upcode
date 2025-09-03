@@ -212,11 +212,11 @@ show_upload_history() {
 upload_single_file() {
     local file="$1"
     
-    echo "🔍 DEBUG INICIAL upload_single_file:"
-    echo "  Arquivo: $file"
-    echo "  user_folders: ${#user_folders[@]} pastas"
-    echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
-    echo "  Token existe: $([[ -f "$TOKEN_FILE" ]] && echo "SIM" || echo "NÃO")"
+    # echo "🔍 DEBUG INICIAL upload_single_file:"
+    # echo "  Arquivo: $file"
+    # echo "  user_folders: ${#user_folders[@]} pastas"
+    # echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
+    # echo "  Token existe: $([[ -f "$TOKEN_FILE" ]] && echo "SIM" || echo "NÃO")"
     printf '  Pastas: "%s"\n' "${user_folders[@]}"
     echo
     
