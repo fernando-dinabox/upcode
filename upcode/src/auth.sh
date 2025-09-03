@@ -284,15 +284,14 @@ extract_user_folders() {
             # Decodificar caracteres unicode simples
             folder=$(echo "$folder" | sed 's/\\u00e1/á/g; s/\\u00e9/é/g; s/\\u00ed/í/g; s/\\u00f3/ó/g; s/\\u00fa/ú/g; s/\\u00e7/ç/g; s/\\u00e3/ã/g; s/\\u00f5/õ/g')
             user_folders+=("$folder")
-            echo "📂 Adicionada pasta: '$folder'"
+            #echo "📂 Adicionada pasta: '$folder'"
         fi
     done < "$temp_file"
     
     rm -f "$temp_file"
     
-    # NÃO SALVAR EM ARQUIVO - APENAS EM MEMÓRIA
-    echo "📁 Pastas extraídas para MEMÓRIA: ${#user_folders[@]}"
-    printf '   📂 "%s"\n' "${user_folders[@]}"
+    # echo "📁 Pastas extraídas para MEMÓRIA: ${#user_folders[@]}"
+    # printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
 renew_token() {
