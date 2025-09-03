@@ -35,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.0.9"
+CURRENT_VERSION="1.0.7"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 
@@ -45,11 +45,7 @@ mkdir -p "$UPCODE_DIR"
 
 TOKEN_FILE="$UPCODE_DIR/token"
 HISTORY_FILE="$UPCODE_DIR/history"
-USER_FOLDERS_FILE="$UPCODE_DIR/user_folders" 
-USER_INFO_FILE="$UPCODE_DIR/user_info" 
-RESTRICTED_FOLDERS_FILE="$UPCODE_DIR/restricted_folders"
 USER_CAN_DELETE=""
-USER_CANNOT_DELETE_FOLDERS=()  
 SYNC_LOG_FILE="$UPCODE_DIR/sync.log"
 SYNC_CACHE_FILE="$UPCODE_DIR/sync.cache"
 
