@@ -263,14 +263,12 @@ upload_single_file() {
             echo "❌ Ainda sem pastas - forçando novo login..."
             ensure_valid_login
         fi
-    else
-        echo "✅ Pastas em memória: ${#user_folders[@]}"
     fi
 
 
-    echo "🔍 Debug - Pastas para seleção:"
-    printf '   📂 "%s"\n' "${user_folders[@]}"
-    echo
+    # echo "🔍 Debug - Pastas para seleção:"
+    # printf '   📂 "%s"\n' "${user_folders[@]}"
+    # echo
     
     local folder=$(printf '%s\n' "${user_folders[@]}" | \
         fzf --prompt="Pasta de destino > " \
