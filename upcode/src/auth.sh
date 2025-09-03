@@ -201,28 +201,52 @@ load_user_info() {
 
 
 ensure_valid_login() {
-    # Só verificar se precisa de login - NÃO chamar load_user_info
-    if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
-        clear_screen
-        echo "⚠️ Sessão expirada ou dados inválidos"
-        echo "🔄 Fazendo novo login..."
-        echo
-        
-        # Limpar dados antigos
-        rm -f "$TOKEN_FILE" "$USER_INFO_FILE"
-        
-        # Limpar variáveis em memória
-        user_folders=()
-        USER_DISPLAY_NAME=""
-        USER_NICENAME=""
-        
-        # Forçar novo login (vai preencher user_folders[] novamente)
-        do_login
-    else
-        echo "🔍 DEBUG ensure_valid_login - Sessão válida:"
-        echo "  user_folders: ${#user_folders[@]} pastas"
-        echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
+    # NOVA LÓGICA: Verificar apenas token e pastas em memória
+    local has_valid_token=false
+    local has_folders=false
+    
+    # Verificar token
+    if [[ -f "$TOKEN_FILE" ]]; then
+        local token=$(cat "$TOKEN_FILE" 2>/dev/null)
+        if [[ -n "$token" && "$token" != "null" ]]; then
+            has_valid_token=true
+        fi
     fi
+    
+    # Verificar pastas em memória
+    if [[ ${#user_folders[@]} -gt 0 ]]; then
+        has_folders=true
+    fi
+    
+    # Debug
+    echo "🔍 DEBUG ensure_valid_login:"
+    echo "  Token válido: $has_valid_token"
+    echo "  Pastas em memória: $has_folders (${#user_folders[@]} pastas)"
+    
+    # Se tem token E pastas, está OK
+    if [[ "$has_valid_token" == "true" && "$has_folders" == "true" ]]; then
+        echo "  ✅ Sessão válida - continuando"
+        return 0
+    fi
+    
+    # Se não tem token OU pastas, fazer novo login
+    clear_screen
+    echo "⚠️ Sessão inválida ou dados incompletos"
+    echo "🔄 Fazendo novo login..."
+    echo "  Token: $has_valid_token"
+    echo "  Pastas: $has_folders"
+    echo
+    
+    # Limpar dados antigos
+    rm -f "$TOKEN_FILE" "$USER_INFO_FILE"
+    
+    # Limpar variáveis em memória
+    user_folders=()
+    USER_DISPLAY_NAME=""
+    USER_NICENAME=""
+    
+    # Forçar novo login
+    do_login
 }
 
 extract_user_folders() {
