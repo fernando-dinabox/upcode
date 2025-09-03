@@ -35,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.0.8"
+CURRENT_VERSION="1.1.8"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 
@@ -70,8 +70,14 @@ if ! check_token; then
     do_login
 else
     echo "✅ Token válido encontrado"
+    # PRIMEIRO carregar pastas em memória
     load_user_folders
+    # DEPOIS carregar dados do usuário silenciosamente
+    load_user_info "silent" 2>/dev/null || true
     echo "📁 Pastas carregadas: ${#user_folders[@]}"
+    if [[ -n "$USER_DISPLAY_NAME" ]]; then
+        echo "👤 Usuário: $USER_DISPLAY_NAME"
+    fi
 fi
 
 main_menu
