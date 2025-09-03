@@ -35,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.0.7"
+CURRENT_VERSION="1.1.7"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 TOKEN_FILE="$HOME/.upcode_token"
@@ -43,6 +43,7 @@ HISTORY_FILE="$HOME/.upcode_history"
 USER_FOLDERS_FILE="$HOME/.upcode_user_folders" 
 USER_INFO_FILE="$HOME/.upcode_user_info" 
 USER_CAN_DELETE=""
+USER_CANNOT_DELETE_FOLDERS=()  
 SYNC_LOG_FILE="$HOME/.upcode_sync.log"
 SYNC_CACHE_FILE="$HOME/.upcode_sync.cache"
 
