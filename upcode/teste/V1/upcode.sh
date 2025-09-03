@@ -1,7 +1,17 @@
 #!/bin/bash
+# filepath: c:\Users\Dinabox\Desktop\main_01_01\main_01_09\upcode\upcode.sh
 
 # Base URL do repositório
 BASE_URL="https://raw.githubusercontent.com/fernando-dinabox/upcode/refs/heads/main/upcode"
+
+
+# Definir pasta para arquivos temporários do upcode
+UPCODE_TEMP_DIR="$HOME/.upcode"
+
+# Criar pasta se não existir
+if [[ ! -d "$UPCODE_TEMP_DIR" ]]; then
+    mkdir -p "$UPCODE_TEMP_DIR"
+fi
 
 # Função para carregar script remoto
 load_remote_script() {
@@ -35,16 +45,21 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.0.7"
+CURRENT_VERSION="1.1.6"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
-AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
-TOKEN_FILE="$HOME/.upcode_token"
-HISTORY_FILE="$HOME/.upcode_history"
-USER_FOLDERS_FILE="$HOME/.upcode_user_folders" 
-USER_INFO_FILE="$HOME/.upcode_user_info" 
+AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"
+
+# TODOS os arquivos temporários na pasta organizada
+TOKEN_FILE="$UPCODE_TEMP_DIR/token"
+USER_FOLDERS_FILE="$UPCODE_TEMP_DIR/user_folders"
+USER_INFO_FILE="$UPCODE_TEMP_DIR/user_info"
+HISTORY_FILE="$UPCODE_TEMP_DIR/upload_history"
+
+# Arquivos de sincronização TAMBÉM na pasta organizada
+SYNC_LOG_FILE="$UPCODE_TEMP_DIR/sync.log"
+SYNC_CACHE_FILE="$UPCODE_TEMP_DIR/sync.cache"
+
 USER_CAN_DELETE=""
-SYNC_LOG_FILE="$HOME/.upcode_sync.log"
-SYNC_CACHE_FILE="$HOME/.upcode_sync.cache"
 
 # Array para arquivos selecionados
 declare -a selected_files=()

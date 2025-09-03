@@ -38,10 +38,10 @@ do_login() {
         -d "username=$username" \
         -d "password=$password")
     
-    echo "🔍 Debug - Resposta do servidor:"
-    echo "$response" | head -10
-    sleep 3
-    echo
+    # echo "🔍 Debug - Resposta do servidor:"
+    # echo "$response" | head -10
+    # sleep 3
+    # echo
     
     # Extrair token
     local token=$(echo "$response" | grep -o '"token":[[:space:]]*"[^"]*"' | sed 's/.*"token":[[:space:]]*"\([^"]*\)".*/\1/')
@@ -66,8 +66,8 @@ do_login() {
         
         # Carregar pastas para verificar
         load_user_folders
-        echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
-        printf '   - "%s"\n' "${user_folders[@]}"
+        # echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
+        # printf '   - "%s"\n' "${user_folders[@]}"
         
         sleep 1
         return 0
@@ -112,7 +112,7 @@ load_user_folders() {
         fi
     fi
     
-    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+    # echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
@@ -121,7 +121,7 @@ load_user_folders() {
 extract_user_info() {
     local response="$1"
     
-    echo "🔍 Debug - Extraindo dados do usuário..."
+    # echo "🔍 Debug - Extraindo dados do usuário..."
     
     # Extrair dados do usuário do JSON
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
@@ -150,12 +150,15 @@ EOF
 
 confirm_delete_option() {
     local upload_type="$1"  # "arquivo" ou "pasta"
+    local folder_name="$2"  # Nome da pasta selecionada
     
-    if [[ "$USER_CAN_DELETE" == "true" ]]; then
+    # Verificar permissão global E específica da pasta
+    if check_folder_delete_permission "$folder_name"; then
         echo
         echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
         echo "══════════════════════════════════"
         echo "Você tem permissão para deletar arquivos no destino antes do upload."
+        echo "📁 Pasta: $folder_name"
         echo
         echo "⚠️ ATENÇÃO: Esta ação irá:"
         echo "   • Deletar TODOS os arquivos na pasta de destino"
@@ -170,10 +173,11 @@ confirm_delete_option() {
             echo "ℹ️ Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
             return 1  # Retorna false para with_delete
         fi
+    else
+        echo "ℹ️ Exclusão não disponível para esta pasta"
+        return 1  # Se não tem permissão, sempre false
     fi
-    return 1  # Se não tem permissão, sempre false
 }
-
 
 
 load_user_info() {
@@ -215,31 +219,34 @@ ensure_valid_login() {
     fi
 }
 
-
 extract_user_folders() {
     local response="$1"
     
-    echo "🔍 Debug - Extraindo pastas..."
+    # Limpar arquivos anteriores
+    > "$USER_FOLDERS_FILE"
+    > "${USER_FOLDERS_FILE}.permissions" 2>/dev/null || true
     
-    # Método mais robusto para extrair as pastas do JSON
-    # Primeiro, extrair todo o array folders
+    # MÉTODO ORIGINAL - extrair apenas array de pastas
     local folders_section=$(echo "$response" | sed -n '/"folders":/,/\]/p')
     
-    echo "🔍 Debug - Seção folders:"
-    echo "$folders_section"
-    
-    # Limpar arquivo anterior
-    > "$USER_FOLDERS_FILE"
+    # Arquivo temporário para processamento
+    local temp_folders=$(mktemp)
     
     # Extrair cada linha que contém uma pasta (entre aspas)
-    echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' | while read -r folder; do
+    echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' > "$temp_folders"
+    
+    while IFS= read -r folder; do
         # Filtrar apenas linhas que não são palavras-chave
         if [[ "$folder" != "folders" && -n "$folder" ]]; then
-            # Decodificar caracteres unicode simples
-            folder=$(echo "$folder" | sed 's/\\u00e1/á/g; s/\\u00e9/é/g; s/\\u00ed/í/g; s/\\u00f3/ó/g; s/\\u00fa/ú/g; s/\\u00e7/ç/g; s/\\u00e3/ã/g; s/\\u00f5/õ/g')
+            # MANTER nome exato da pasta sem modificações
             echo "$folder" >> "$USER_FOLDERS_FILE"
+            # Para compatibilidade, assumir que todas têm permissão true
+            echo "$folder:true" >> "${USER_FOLDERS_FILE}.permissions"
         fi
-    done
+    done < "$temp_folders"
+    
+    # Limpar arquivo temporário
+    rm -f "$temp_folders"
     
     # Carregar pastas no array
     user_folders=()
@@ -248,9 +255,6 @@ extract_user_folders() {
             [[ -n "$folder" ]] && user_folders+=("$folder")
         done < "$USER_FOLDERS_FILE"
     fi
-    
-    echo "📁 Pastas extraídas e carregadas: ${#user_folders[@]}"
-    printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
 load_user_folders() {
@@ -262,7 +266,7 @@ load_user_folders() {
     fi
     
     
-    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+    # echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
 }
 
 
@@ -291,4 +295,22 @@ renew_token() {
         # Forçar novo login
         do_login
     fi
+}
+check_folder_delete_permission() {
+    local folder_name="$1"
+    local permissions_file="${USER_FOLDERS_FILE}.permissions"
+    
+    # Se não tem permissão global, retorna false
+    if [[ "$USER_CAN_DELETE" != "true" ]]; then
+        return 1
+    fi
+    
+    # Se arquivo de permissões não existe, usar permissão global
+    if [[ ! -f "$permissions_file" ]]; then
+        return 0  # Se tem permissão global e não há arquivo específico, permite
+    fi
+        
+    # Por enquanto, sempre permitir se tem permissão global
+    # (até termos dados reais das permissões específicas)
+    return 0
 }

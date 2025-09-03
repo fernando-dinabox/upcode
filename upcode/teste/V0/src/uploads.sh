@@ -441,9 +441,9 @@ upload_pasta_completa() {
         
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "📤 ENVIANDO ARQUIVO $((upload_count + 1))/${#files_array[@]}"
-        # echo "📄 Arquivo local: $(basename "$arquivo")"
-        # echo "📁 Caminho relativo: $rel_path"
-        # echo "🎯 Destino normalizado: $dest_path"
+        echo "📄 Arquivo local: $(basename "$arquivo")"
+        echo "📁 Caminho relativo: $rel_path"
+        echo "🎯 Destino normalizado: $dest_path"
         echo "💾 Tamanho: $(du -sh "$arquivo" 2>/dev/null | cut -f1 || echo "N/A")"
         
         
@@ -451,7 +451,7 @@ upload_pasta_completa() {
         if [[ -d "/c/Windows" ]] && [[ ! -d "/mnt/c" ]]; then
             if [[ "$arquivo" =~ ^/c/ ]]; then
                 corrected_file=$(echo "$arquivo" | sed 's|^/c|C:|')
-                #echo "🔧 Caminho corrigido para Windows: $corrected_file"
+                echo "🔧 Caminho corrigido para Windows: $corrected_file"
             fi
         fi
         
@@ -464,10 +464,10 @@ upload_pasta_completa() {
         )
         
         # DEBUG: Estado do delete
-        #echo "🔍 DEBUG - Verificação do delete:"
+        echo "🔍 DEBUG - Verificação do delete:"
         echo "  with_delete_param: '$with_delete_param'"
-        # echo "  delete_applied: '$delete_applied'"
-        # echo "  Vai aplicar delete? $([[ "$with_delete_param" == "true" && "$delete_applied" == "false" ]] && echo "SIM" || echo "NÃO")"
+        echo "  delete_applied: '$delete_applied'"
+        echo "  Vai aplicar delete? $([[ "$with_delete_param" == "true" && "$delete_applied" == "false" ]] && echo "SIM" || echo "NÃO")"
         
         # Aplicar with_delete apenas no PRIMEIRO arquivo
         if [[ "$with_delete_param" == "true" && "$delete_applied" == "false" ]]; then
@@ -488,16 +488,16 @@ upload_pasta_completa() {
         
         # DEBUG: Mostrar comando curl completo
         echo
-        #echo "🔧 DEBUG - Array completo do curl_cmd:"
-        # for i in "${!curl_cmd[@]}"; do
-        #     if [[ "${curl_cmd[$i]}" == *"Authorization: Bearer"* ]]; then
-        #         #echo "  [$i]: 'Authorization: Bearer ${token:0:10}...***'"
-        #     elif [[ "${curl_cmd[$i]}" == *"@"* ]]; then
-        #         #echo "  [$i]: 'arquivo[]=@$(basename "${curl_cmd[$i]#*@}")'"
-        #     else
-        #         #echo "  [$i]: '${curl_cmd[$i]}'"
-        #     fi
-        # done
+        echo "🔧 DEBUG - Array completo do curl_cmd:"
+        for i in "${!curl_cmd[@]}"; do
+            if [[ "${curl_cmd[$i]}" == *"Authorization: Bearer"* ]]; then
+                echo "  [$i]: 'Authorization: Bearer ${token:0:10}...***'"
+            elif [[ "${curl_cmd[$i]}" == *"@"* ]]; then
+                echo "  [$i]: 'arquivo[]=@$(basename "${curl_cmd[$i]#*@}")'"
+            else
+                echo "  [$i]: '${curl_cmd[$i]}'"
+            fi
+        done
         echo
         
         # Executar upload
@@ -509,7 +509,7 @@ upload_pasta_completa() {
         local duration=$((end_time - start_time))
         
         # NOVO DEBUG: Verificar se a API realmente recebeu o with_delete
-        #echo "🔍 TESTE DEBUG - Resposta sobre delete:"
+        echo "🔍 TESTE DEBUG - Resposta sobre delete:"
         if echo "$response" | grep -i -E "(delet|remov|clean|clear)" | head -3; then
             echo "   ✅ API mencionou operação de delete"
         else
@@ -518,8 +518,8 @@ upload_pasta_completa() {
         
         ((upload_count++))
         
-        # echo "⌛ Tempo de upload: ${duration}s"
-        # echo "🔍 Exit code curl: $curl_exit"
+        echo "⌛ Tempo de upload: ${duration}s"
+        echo "🔍 Exit code curl: $curl_exit"
         
         # Análise da resposta
         if [[ $curl_exit -ne 0 ]]; then
@@ -608,10 +608,10 @@ perform_upload() {
     echo "🔄 Enviando $filename para pasta: $folder"
     
     echo
-    echo "🔧 Detalhes do envio:"
+    echo "🔧 COMANDO CURL DETALHADO:"
     echo "─────────────────────────"
     echo "  📡 URL: $CONFIG_URL"
-    # echo "  🔑 Token: ${token:0:20}..."
+    echo "  🔑 Token: ${token:0:20}..."
     echo "  📄 Arquivo: $filename"
     echo "  📁 Pasta destino: $folder"
     if [[ "$with_delete" == "true" ]]; then
@@ -634,18 +634,18 @@ perform_upload() {
     fi
     
     # Mostrar comando curl mascarado
-    # echo
-    # echo "🔍 PARÂMETROS ENVIADOS:"
-    # echo "  -H \"Authorization: Bearer ${token:0:10}...***\""
-    # echo "  -F \"arquivo[]=@$filename\""
-    # echo "  -F \"pasta=$folder\""
-    # if [[ "$with_delete" == "true" ]]; then
-    #     echo "  -F \"with_delete=true\""
-    # fi
-    # echo
+    echo
+    echo "🔍 PARÂMETROS ENVIADOS:"
+    echo "  -H \"Authorization: Bearer ${token:0:10}...***\""
+    echo "  -F \"arquivo[]=@$filename\""
+    echo "  -F \"pasta=$folder\""
+    if [[ "$with_delete" == "true" ]]; then
+        echo "  -F \"with_delete=true\""
+    fi
+    echo
     
     # Executar upload
-    #echo "⏳ Executando upload..."
+    echo "⏳ Executando upload..."
     local start_time=$(date +%s)
     local response=$("${curl_cmd[@]}" 2>&1)
     local curl_exit=$?
@@ -653,12 +653,12 @@ perform_upload() {
     local duration=$((end_time - start_time))
     
     echo "⌛ Tempo de execução: ${duration}s"
-    #echo "🔍 Exit code: $curl_exit"
+    echo "🔍 Exit code: $curl_exit"
     
     # Análise detalhada da resposta
-    # echo
-    # echo "📋 ANÁLISE DA RESPOSTA:"
-    # echo "─────────────────────"
+    echo
+    echo "📋 ANÁLISE DA RESPOSTA:"
+    echo "─────────────────────"
     
     if [[ $curl_exit -ne 0 ]]; then
         echo "❌ ERRO CURL (Exit Code: $curl_exit)"
@@ -676,20 +676,20 @@ perform_upload() {
     
     # Verificar se é JSON válido
     if [[ "$response" =~ ^\{.*\}$ ]] || [[ "$response" =~ ^\[.*\]$ ]]; then
-        #echo "✅ Resposta é JSON válido"
+        echo "✅ Resposta é JSON válido"
         
         # Extrair informações do JSON
         local success_status=$(echo "$response" | grep -o '"success":[[:space:]]*[^,}]*' | sed 's/.*"success":[[:space:]]*\([^,}]*\).*/\1/')
         local message=$(echo "$response" | grep -o '"message":[[:space:]]*"[^"]*"' | sed 's/.*"message":[[:space:]]*"\([^"]*\)".*/\1/')
         
-        #echo "   🎯 Status: ${success_status:-"não encontrado"}"
-        #echo "   💬 Mensagem: ${message:-"não encontrada"}"
+        echo "   🎯 Status: ${success_status:-"não encontrado"}"
+        echo "   💬 Mensagem: ${message:-"não encontrada"}"
         
-        # # Mostrar resposta completa para debug
-        # echo
-        # echo "📄 RESPOSTA COMPLETA:"
-        # echo "─────────────────────"
-        # echo "$response" | head -20
+        # Mostrar resposta completa para debug
+        echo
+        echo "📄 RESPOSTA COMPLETA:"
+        echo "─────────────────────"
+        echo "$response" | head -20
         
     else
         echo "⚠️ Resposta NÃO é JSON válido"
@@ -700,13 +700,10 @@ perform_upload() {
     echo
     if echo "$response" | grep -q '"success":[[:space:]]*true'; then
         echo "🎉 ✅ SUCESSO - $filename enviado com êxito!"
-
         if [[ "$with_delete" == "true" ]]; then
             echo "🗑️ Arquivos antigos foram removidos do destino"
         fi
         echo "📁 Arquivo enviado para: $folder"
-        echo
-        pause             
         return 0
     else
         echo "💥 ❌ FALHA - $filename não foi enviado"
@@ -718,7 +715,7 @@ perform_upload() {
         fi
         
         echo
-        pause           
+        pause
         return 1
     fi
 }

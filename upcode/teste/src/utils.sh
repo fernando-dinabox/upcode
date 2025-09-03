@@ -215,7 +215,97 @@ clean_data() {
         done
     done
 }
-
+clean_all_data() {
+    clear_screen
+    echo "🧹 LIMPEZA COMPLETA DE DADOS"
+    echo "═══════════════════════════"
+    echo
+    
+    # Mostrar o que será removido
+    if [[ -d "$UPCODE_TEMP_DIR" ]]; then
+        echo "📁 Pasta de dados: $UPCODE_TEMP_DIR"
+        echo "📄 Arquivos que serão removidos:"
+        
+        if [[ -f "$TOKEN_FILE" ]]; then
+            echo "   🔑 Token de autenticação"
+        fi
+        if [[ -f "$USER_FOLDERS_FILE" ]]; then
+            echo "   📂 Cache de pastas do usuário"
+        fi
+        if [[ -f "${USER_FOLDERS_FILE}.permissions" ]]; then
+            echo "   🔒 Permissões das pastas"
+        fi
+        if [[ -f "$USER_INFO_FILE" ]]; then
+            echo "   👤 Informações do usuário"
+        fi
+        if [[ -f "$HISTORY_FILE" ]]; then
+            echo "   📋 Histórico de uploads"
+        fi
+        if [[ -f "$SYNC_LOG_FILE" ]]; then
+            echo "   🔄 Log de sincronização"
+        fi
+        if [[ -f "$SYNC_CACHE_FILE" ]]; then
+            echo "   💾 Cache de sincronização"
+        fi
+        
+        # Mostrar outros arquivos que possam existir
+        local other_files=$(find "$UPCODE_TEMP_DIR" -type f ! -name "token" ! -name "user_folders" ! -name "user_folders.permissions" ! -name "user_info" ! -name "upload_history" ! -name "sync.log" ! -name "sync.cache" 2>/dev/null)
+        if [[ -n "$other_files" ]]; then
+            echo "   📄 Outros arquivos encontrados:"
+            echo "$other_files" | while read -r file; do
+                echo "      $(basename "$file")"
+            done
+        fi
+        
+        echo
+        echo "💾 Tamanho total: $(du -sh "$UPCODE_TEMP_DIR" 2>/dev/null | cut -f1 || echo "N/A")"
+    else
+        echo "ℹ️ Nenhum dado encontrado para limpar"
+        pause
+        return
+    fi
+    
+    echo
+    echo "⚠️ ATENÇÃO:"
+    echo "   • Esta ação removerá TODOS os dados salvos do upcode"
+    echo "   • Você precisará fazer login novamente"
+    echo "   • O histórico de uploads será perdido"
+    echo "   • Os dados de sincronização serão perdidos"
+    echo "   • Ação IRREVERSÍVEL"
+    
+    if confirm "🗑️ Confirma a limpeza completa?"; then
+        echo
+        echo "🧹 Removendo dados..."
+        
+        # Limpar variáveis primeiro
+        USER_DISPLAY_NAME=""
+        USER_NICENAME=""
+        USER_EMAIL=""
+        USER_TYPE=""
+        USER_CAN_DELETE=""
+        user_folders=()
+        
+        # Remover toda a pasta
+        if rm -rf "$UPCODE_TEMP_DIR" 2>/dev/null; then
+            echo "✅ Todos os dados foram removidos com sucesso!"
+            echo "📁 Pasta removida: $UPCODE_TEMP_DIR"
+        else
+            echo "❌ Erro ao remover alguns arquivos"
+            echo "🔧 Tentando limpeza individual..."
+            
+            # Tentar remover arquivos individuais
+            rm -f "$TOKEN_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE" "$HISTORY_FILE" "${USER_FOLDERS_FILE}.permissions" "$SYNC_LOG_FILE" "$SYNC_CACHE_FILE" 2>/dev/null
+            echo "✅ Limpeza individual concluída"
+        fi
+        
+        echo
+        echo "🔄 Reinicie o upcode para fazer novo login"
+    else
+        echo "ℹ️ Limpeza cancelada"
+    fi
+    
+    pause
+}
 
 show_progress() {
     local message="$1"
