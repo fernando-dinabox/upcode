@@ -7,7 +7,7 @@ main_menu() {
         clear_screen
         
         # Carregar dados do usuário para exibição
-        load_user_info
+        load_user_info "silent"
         
         #echo "📡 Sistema ativo e conectado"
         #if [[ -n "$USER_DISPLAY_NAME" ]]; then
@@ -64,7 +64,7 @@ main_menu() {
                     "quick") quick_upload ;;
                     "history") show_upload_history ;;
                     "token") renew_token ;;
-                    "clean") clean_data ;;
+                    "clean") limpar_tudo ;;
                     #"test_paths") test_path_formats ;; 
                     "exit") clear; exit 0 ;;
                 esac
