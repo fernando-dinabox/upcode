@@ -100,9 +100,10 @@ load_user_folders() {
         fi
     fi
     
-    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
+    echo "🔍 Debug load_user_folders - Pastas finais: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
+
 
 extract_user_info() {
     local response="$1"
@@ -203,10 +204,9 @@ load_user_info() {
 
 
 ensure_valid_login() {
-    load_user_folders
     load_user_info
-    [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 && -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]] && IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
     
+    # Se não tem pastas OU dados de usuário, fazer novo login
     if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
         clear_screen
         echo "⚠️ Sessão expirada ou dados inválidos"
@@ -214,14 +214,15 @@ ensure_valid_login() {
         echo
         
         # Limpar dados antigos
-        rm -f "$TOKEN_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE"
+        rm -f "$TOKEN_FILE" "$USER_INFO_FILE"
         
-        # Forçar novo login
+        # Limpar variáveis em memória
+        user_folders=()
+        USER_DISPLAY_NAME=""
+        USER_NICENAME=""
+        
+        # Forçar novo login (vai preencher user_folders[] novamente)
         do_login
-        
-        # Recarregar dados
-        load_user_folders
-        load_user_info
     fi
 }
 
@@ -258,18 +259,6 @@ extract_user_folders() {
     echo "📁 Pastas extraídas para MEMÓRIA: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
-load_user_folders() {
-    user_folders=()
-    if [[ -f "$USER_FOLDERS_FILE" ]]; then
-        while IFS= read -r folder; do
-            [[ -n "$folder" ]] && user_folders+=("$folder")
-        done < "$USER_FOLDERS_FILE"
-    fi
-    
-    
-    echo "🔍 Debug load_user_folders - Pastas carregadas: ${#user_folders[@]}"
-}
-
 
 renew_token() {
     clear_screen
