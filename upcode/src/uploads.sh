@@ -55,7 +55,7 @@ upload_folder_as_complete_structure() {
     
     # Verificar opção de exclusão
     local with_delete=false
-    if confirm_delete_option "pasta completa"; then
+    if confirm_delete_option "pasta completa" "$pasta_destino"; then
         with_delete=true
     fi
     
@@ -137,7 +137,7 @@ upload_folder_content_only() {
     
     # Verificar opção de exclusão
     local with_delete=false
-    if confirm_delete_option "conteúdo"; then
+    if confirm_delete_option "conteúdo" "$pasta_destino"; then
         with_delete=true
     fi
     
@@ -253,7 +253,7 @@ upload_single_file() {
     
     # Verificar opção de exclusão
     local with_delete=false
-    if confirm_delete_option "arquivo"; then
+    if confirm_delete_option "arquivo" "$folder"; then
         with_delete=true
     fi
     
@@ -351,7 +351,7 @@ upload_folder_complete() {
     
     # Verificar opção de exclusão
     local with_delete=false
-    if confirm_delete_option "pasta"; then
+      if confirm_delete_option "pasta" "$pasta_destino"; then
         with_delete=true
     fi
     
