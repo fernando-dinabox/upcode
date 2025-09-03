@@ -195,21 +195,13 @@ load_user_info() {
         if [[ "$1" != "silent" ]]; then
             echo "👤 Usuário carregado: $USER_DISPLAY_NAME ($USER_NICENAME)"
         fi
-    else
-        USER_DISPLAY_NAME=""
-        USER_NICENAME=""
-        USER_EMAIL=""
-        USER_TYPE=""
-        USER_CAN_DELETE=""
-        USER_CANNOT_DELETE_FOLDERS=()
+
     fi
 }
 
 
 ensure_valid_login() {
-    load_user_info "silent"    
-    
-    # Se não tem pastas OU dados de usuário, fazer novo login
+    # Só verificar se precisa de login - NÃO chamar load_user_info
     if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
         clear_screen
         echo "⚠️ Sessão expirada ou dados inválidos"
@@ -226,6 +218,10 @@ ensure_valid_login() {
         
         # Forçar novo login (vai preencher user_folders[] novamente)
         do_login
+    else
+        echo "🔍 DEBUG ensure_valid_login - Sessão válida:"
+        echo "  user_folders: ${#user_folders[@]} pastas"
+        echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
     fi
 }
 
