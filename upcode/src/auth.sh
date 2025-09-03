@@ -122,6 +122,9 @@ extract_user_info() {
     local response="$1"
     
     echo "🔍 Debug - Extraindo dados do usuário..."
+    echo "🔍 RESPOSTA COMPLETA DO SERVIDOR:"  # ← ADICIONAR ESTA LINHA
+    echo "$response"                          # ← ADICIONAR ESTA LINHA
+    echo "🔍 FIM DA RESPOSTA"                # ← ADICIONAR ESTA LINHA
     
     # Extrair dados básicos do usuário
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
