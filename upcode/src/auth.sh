@@ -34,8 +34,8 @@ do_login() {
         -d "username=$username" \
         -d "password=$password")
     
-    echo "🔍 Debug - Resposta do servidor:"
-    echo "$response" | head -10
+    # echo "🔍 Debug - Resposta do servidor:"
+    # echo "$response" | head -10
     sleep 3
     echo
     
@@ -57,12 +57,12 @@ do_login() {
         echo "🎭 Tipo: $USER_TYPE"
         local folder_count=$(echo "$response" | grep -o '"folders_count":[[:space:]]*[0-9]*' | sed 's/.*"folders_count":[[:space:]]*\([0-9]*\).*/\1/')
         echo "📁 Pastas disponíveis: $folder_count"
-        echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
-        printf '   - "%s"\n' "${user_folders[@]}"
+        # echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
+        # printf '   - "%s"\n' "${user_folders[@]}"
         
-        # PAUSA PARA VER RESULTADO
-        echo
-        echo "Pressione ENTER para continuar..."
+        # # PAUSA PARA VER RESULTADO
+        # echo
+        # echo "Pressione ENTER para continuar..."
         read -r
         
         return 0
@@ -78,7 +78,7 @@ do_login() {
 load_user_folders() {
     # Se já temos pastas em memória, não fazer nada
     if [[ ${#user_folders[@]} -gt 0 ]]; then
-        echo "🔍 Debug load_user_folders - Pastas já em memória: ${#user_folders[@]}"
+        # echo "🔍 Debug load_user_folders - Pastas já em memória: ${#user_folders[@]}"
         printf '   📂 "%s"\n' "${user_folders[@]}"
         return 0
     fi
@@ -102,7 +102,7 @@ load_user_folders() {
         fi
     fi
     
-    echo "🔍 Debug load_user_folders - Pastas finais: ${#user_folders[@]}"
+    # echo "🔍 Debug load_user_folders - Pastas finais: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
 
@@ -118,7 +118,7 @@ extract_user_info() {
     # Tentar criar diretório, mas não falhar se não conseguir
     mkdir -p "$UPCODE_DIR" 2>/dev/null || true
     
-    echo "🔍 Debug - Extraindo dados do usuário..."
+    # echo "🔍 Debug - Extraindo dados do usuário..."
     
     # Extrair dados básicos com verificação
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/' 2>/dev/null || echo "")
@@ -165,9 +165,9 @@ EOF
     echo "📁 Pastas restritas salvas em arquivo separado: ${#USER_CANNOT_DELETE_FOLDERS[@]} pastas"
     chmod 600 "$USER_INFO_FILE"
     
-    echo "🔍 Dados salvos:"
-    echo "  USER_CAN_DELETE = '$USER_CAN_DELETE'"
-    echo "  USER_CANNOT_DELETE_FOLDERS_STR = '$USER_CANNOT_DELETE_FOLDERS_STR'"
+    # echo "🔍 Dados salvos:"
+    # echo "  USER_CAN_DELETE = '$USER_CAN_DELETE'"
+    # echo "  USER_CANNOT_DELETE_FOLDERS_STR = '$USER_CANNOT_DELETE_FOLDERS_STR'"
 }
 
 
@@ -232,9 +232,9 @@ ensure_valid_login() {
     fi
     
     # Debug
-    echo "🔍 DEBUG ensure_valid_login:"
-    echo "  Token válido: $has_valid_token"
-    echo "  Pastas em memória: $has_folders (${#user_folders[@]} pastas)"
+    # echo "🔍 DEBUG ensure_valid_login:"
+    # echo "  Token válido: $has_valid_token"
+    # echo "  Pastas em memória: $has_folders (${#user_folders[@]} pastas)"
     
     # Se tem token E pastas, está OK
     if [[ "$has_valid_token" == "true" && "$has_folders" == "true" ]]; then
@@ -246,8 +246,8 @@ ensure_valid_login() {
     clear_screen
     echo "⚠️ Sessão inválida ou dados incompletos"
     echo "🔄 Fazendo novo login..."
-    echo "  Token: $has_valid_token"
-    echo "  Pastas: $has_folders"
+    # echo "  Token: $has_valid_token"
+    # echo "  Pastas: $has_folders"
     echo
     
     # Limpar dados antigos
@@ -265,18 +265,17 @@ ensure_valid_login() {
 extract_user_folders() {
     local response="$1"
     
-    echo "🔍 Debug - Extraindo pastas..."
+    # echo "🔍 Debug - Extraindo pastas..."
     
     # Extrair todo o array folders
     local folders_section=$(echo "$response" | sed -n '/"folders":/,/\]/p')
     
-    echo "🔍 Debug - Seção folders:"
-    echo "$folders_section"
+    # echo "🔍 Debug - Seção folders:"
+    # echo "$folders_section"
     
     # CORREÇÃO: Limpar array antes de preencher
     user_folders=()
     
-    # NOVA ABORDAGEM: Usar um loop diferente
     local temp_file=$(mktemp)
     echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' > "$temp_file"
     
