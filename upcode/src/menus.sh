@@ -9,14 +9,21 @@ main_menu() {
         # Carregar dados do usuário para exibição
         load_user_info "silent"
         
-        #echo "📡 Sistema ativo e conectado"
-        #if [[ -n "$USER_DISPLAY_NAME" ]]; then
-            #echo "👤 Logado como: $USER_DISPLAY_NAME ($USER_NICENAME)"
-            #echo "📧 Email: $USER_EMAIL |  Tipo: $USER_TYPE"
-        #else
-            #echo "👤 Status: Não logado"
-        #fi
-        #echo
+        # Se não tem USER_DISPLAY_NAME mas tem token, tentar carregar
+        if [[ -z "$USER_DISPLAY_NAME" ]] && [[ -f "$TOKEN_FILE" ]]; then
+            local token=$(cat "$TOKEN_FILE" 2>/dev/null)
+            if [[ -n "$token" && "$token" != "null" ]]; then
+                echo "🔧 Carregando dados do usuário do servidor..."
+                local response=$(curl -s -X POST "$CONFIG_URL" \
+                    -H "Authorization: Bearer $token" \
+                    -d "action=update_folders")
+                
+                if echo "$response" | grep -q '"success":[[:space:]]*true'; then
+                    extract_user_info "$response"
+                    extract_user_folders "$response"
+                fi
+            fi
+        fi
         
         # Verificar se há histórico
         local history_count=0
