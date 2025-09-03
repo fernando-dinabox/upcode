@@ -35,7 +35,7 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.1.9"
+CURRENT_VERSION="1.0.9"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
 
