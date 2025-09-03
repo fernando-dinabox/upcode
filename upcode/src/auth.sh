@@ -163,6 +163,8 @@ confirm_delete_option() {
         return 1  # Sem permissão global
     fi
     
+
+    echo "🔍 VERIFICANDO: pasta='$target_folder' contra ${#USER_CANNOT_DELETE_FOLDERS[@]} restrições"
     # Verificar se a pasta atual está na lista de restrições
     for restricted_folder in "${USER_CANNOT_DELETE_FOLDERS[@]}"; do
         if [[ "$target_folder" == "$restricted_folder" ]]; then
