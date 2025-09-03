@@ -35,17 +35,22 @@ echo "✅ Carregamento concluido!"
 echo "Iniciando Upcode!"
 echo
 
-CURRENT_VERSION="1.2.5"
+CURRENT_VERSION="1.1.8"
 CONFIG_URL="https://db33.dev.dinabox.net/upcode/upcode.php" 
 AUTH_URL="https://db33.dev.dinabox.net/upcode/upcode.php"  
-TOKEN_FILE="$HOME/.upcode_token"
-HISTORY_FILE="$HOME/.upcode_history"
-USER_FOLDERS_FILE="$HOME/.upcode_user_folders" 
-USER_INFO_FILE="$HOME/.upcode_user_info" 
+
+# Criar diretório upcode
+UPCODE_DIR="$HOME/.upcode"
+mkdir -p "$UPCODE_DIR"
+
+TOKEN_FILE="$UPCODE_DIR/token"
+HISTORY_FILE="$UPCODE_DIR/history"
+USER_FOLDERS_FILE="$UPCODE_DIR/user_folders" 
+USER_INFO_FILE="$UPCODE_DIR/user_info" 
 USER_CAN_DELETE=""
 USER_CANNOT_DELETE_FOLDERS=()  
-SYNC_LOG_FILE="$HOME/.upcode_sync.log"
-SYNC_CACHE_FILE="$HOME/.upcode_sync.cache"
+SYNC_LOG_FILE="$UPCODE_DIR/sync.log"
+SYNC_CACHE_FILE="$UPCODE_DIR/sync.cache"
 
 # Array para arquivos selecionados
 declare -a selected_files=()
