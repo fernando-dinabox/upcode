@@ -123,55 +123,75 @@ extract_user_info() {
     
     echo "🔍 Debug - Extraindo dados do usuário..."
     
-    # Extrair dados do usuário do JSON
+    # Extrair dados básicos do usuário
     USER_DISPLAY_NAME=$(echo "$response" | grep -o '"user_display_name":[[:space:]]*"[^"]*"' | sed 's/.*"user_display_name":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_NICENAME=$(echo "$response" | grep -o '"user_nicename":[[:space:]]*"[^"]*"' | sed 's/.*"user_nicename":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_EMAIL=$(echo "$response" | grep -o '"user_email":[[:space:]]*"[^"]*"' | sed 's/.*"user_email":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_TYPE=$(echo "$response" | grep -o '"user_type":[[:space:]]*"[^"]*"' | sed 's/.*"user_type":[[:space:]]*"\([^"]*\)".*/\1/')
     USER_CAN_DELETE=$(echo "$response" | grep -o '"can_delete":[[:space:]]*[^,}]*' | sed 's/.*"can_delete":[[:space:]]*\([^,}]*\).*/\1/')
     
-    # Salvar no arquivo
+    # Extrair pastas restritas (ORDEM CORRETA)
+    USER_CANNOT_DELETE_FOLDERS=()  # ← PRIMEIRO LIMPA
+    local cannot_delete_list=$(echo "$response" | grep -o '"cannot_delete_folders":\[[^]]*\]')
+    if [[ -n "$cannot_delete_list" ]]; then
+        while IFS= read -r folder; do
+            [[ -n "$folder" ]] && USER_CANNOT_DELETE_FOLDERS+=("$folder")
+        done < <(echo "$cannot_delete_list" | grep -o '"[^"]*"' | sed 's/"//g' | grep -v 'cannot_delete_folders')
+    fi
+    
+    # Salvar no arquivo (INCLUIR AS PASTAS RESTRITAS)
     cat > "$USER_INFO_FILE" << EOF
 USER_DISPLAY_NAME="$USER_DISPLAY_NAME"
-USER_NICENAME="$USER_NICENAME"  
+USER_NICENAME="$USER_NICENAME"
 USER_EMAIL="$USER_EMAIL"
 USER_TYPE="$USER_TYPE"
 USER_CAN_DELETE="$USER_CAN_DELETE"
+USER_CANNOT_DELETE_FOLDERS_STR="${USER_CANNOT_DELETE_FOLDERS[*]}"
 EOF
     chmod 600 "$USER_INFO_FILE"
-    
-    #echo "👤 Dados do usuário extraídos:"
-    #echo "   Nome: $USER_DISPLAY_NAME"
-    #echo "   Login: $USER_NICENAME"
-    #echo "   Email: $USER_EMAIL"
-    #echo "   Tipo: $USER_TYPE"
-    #echo "   Pode deletar: $USER_CAN_DELETE"
 }
 
 confirm_delete_option() {
     local upload_type="$1"  # "arquivo" ou "pasta"
+    local target_folder="$2"  # NOVO: pasta onde será feito o upload
     
-    if [[ "$USER_CAN_DELETE" == "true" ]]; then
-        echo
-        echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
-        echo "══════════════════════════════════"
-        echo "Você tem permissão para deletar arquivos no destino antes do upload."
-        echo
-        echo "⚠️ ATENÇÃO: Esta ação irá:"
-        echo "   • Deletar TODOS os arquivos na pasta de destino"
-        echo "   • Enviar os novos arquivos para pasta limpa"
-        echo "   • Ação IRREVERSÍVEL"
-        echo
-        
-        if confirm "🗑️ Deletar arquivos existentes no destino antes do upload?"; then
-            echo "✅ Upload será feito COM exclusão prévia"
-            return 0  # Retorna true para with_delete
-        else
-            echo "ℹ️ Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
-            return 1  # Retorna false para with_delete
-        fi
+    # Verificar se tem permissão global
+    if [[ "$USER_CAN_DELETE" != "true" ]]; then
+        return 1  # Sem permissão global
     fi
-    return 1  # Se não tem permissão, sempre false
+    
+    # Verificar se a pasta atual está na lista de restrições
+    for restricted_folder in "${USER_CANNOT_DELETE_FOLDERS[@]}"; do
+        if [[ "$target_folder" == "$restricted_folder" ]]; then
+            echo
+            echo "🚫 EXCLUSÃO NÃO PERMITIDA"
+            echo "═══════════════════════════"
+            echo "Esta pasta está protegida contra exclusão prévia."
+            echo "Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
+            echo
+            return 1  # Não pode deletar nesta pasta
+        fi
+    done
+    
+    # Se chegou aqui, pode deletar - mostrar opção
+    echo
+    echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
+    echo "══════════════════════════════════"
+    echo "Você tem permissão para deletar arquivos no destino antes do upload."
+    echo
+    echo "⚠️ ATENÇÃO: Esta ação irá:"
+    echo "   • Deletar TODOS os arquivos na pasta de destino"
+    echo "   • Enviar os novos arquivos para pasta limpa"
+    echo "   • Ação IRREVERSÍVEL"
+    echo
+    
+    if confirm "🗑️ Deletar arquivos existentes no destino antes do upload?"; then
+        echo "✅ Upload será feito COM exclusão prévia"
+        return 0  # Retorna true para with_delete
+    else
+        echo "ℹ️ Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
+        return 1  # Retorna false para with_delete
+    fi
 }
 
 
@@ -179,6 +199,13 @@ confirm_delete_option() {
 load_user_info() {
     if [[ -f "$USER_INFO_FILE" ]]; then
         source "$USER_INFO_FILE"
+        
+        # Recriar array das pastas restritas
+        USER_CANNOT_DELETE_FOLDERS=()
+        if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
+            IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
+        fi
+        
         # Só mostrar mensagem se não for chamado silenciosamente
         if [[ "$1" != "silent" ]]; then
             echo "👤 Usuário carregado: $USER_DISPLAY_NAME ($USER_NICENAME)"
@@ -189,6 +216,7 @@ load_user_info() {
         USER_EMAIL=""
         USER_TYPE=""
         USER_CAN_DELETE=""
+        USER_CANNOT_DELETE_FOLDERS=()
     fi
 }
 
