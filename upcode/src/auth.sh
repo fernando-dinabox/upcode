@@ -153,6 +153,16 @@ USER_TYPE="$USER_TYPE"
 USER_CAN_DELETE="$USER_CAN_DELETE"
 USER_CANNOT_DELETE_FOLDERS_STR="$USER_CANNOT_DELETE_FOLDERS_STR"
 EOF
+
+
+    # CRIAR ARQUIVO SEPARADO para pastas restritas (uma pasta por linha)
+    > "$RESTRICTED_FOLDERS_FILE"
+    if [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -gt 0 ]]; then
+        printf '%s\n' "${USER_CANNOT_DELETE_FOLDERS[@]}" > "$RESTRICTED_FOLDERS_FILE"
+    fi
+    chmod 600 "$RESTRICTED_FOLDERS_FILE"
+    
+    echo "📁 Pastas restritas salvas em arquivo separado: ${#USER_CANNOT_DELETE_FOLDERS[@]} pastas"
     chmod 600 "$USER_INFO_FILE"
     
     echo "🔍 Dados salvos:"
@@ -327,7 +337,6 @@ pasta_pode_deletar() {
     echo "🔍 DEBUG pasta_pode_deletar:"
     echo "  Pasta testada: '$pasta_alvo'"
     echo "  USER_CAN_DELETE: '$USER_CAN_DELETE'"
-    echo "  USER_CANNOT_DELETE_FOLDERS_STR: '$USER_CANNOT_DELETE_FOLDERS_STR'"
     
     # Se não tem permissão global
     if [[ "$USER_CAN_DELETE" != "true" ]]; then
@@ -335,18 +344,23 @@ pasta_pode_deletar() {
         return 1
     fi
     
-    # Verificar se a pasta está nas restrições
-    if [[ -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
-        # Separar as pastas e verificar uma por uma
-        IFS=' ' read -ra restricted_folders <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
-        for restricted in "${restricted_folders[@]}"; do
-            if [[ "$pasta_alvo" == "$restricted" ]]; then
-                echo "  ❌ Pasta '$pasta_alvo' está restrita"
+    # Verificar arquivo de pastas restritas
+    if [[ -f "$RESTRICTED_FOLDERS_FILE" ]]; then
+        echo "  🔍 Verificando arquivo de restrições..."
+        
+        # Ler arquivo linha por linha
+        while IFS= read -r restricted_folder; do
+            echo "    Comparando '$pasta_alvo' com '$restricted_folder'"
+            if [[ "$pasta_alvo" == "$restricted_folder" ]]; then
+                echo "  ❌ Pasta '$pasta_alvo' está restrita (encontrada no arquivo)"
                 return 1
             fi
-        done
+        done < "$RESTRICTED_FOLDERS_FILE"
+        
+        echo "  ✅ Pasta '$pasta_alvo' não está restrita"
+    else
+        echo "  ℹ️ Arquivo de restrições não existe - pode deletar"
     fi
     
-    echo "  ✅ Pasta '$pasta_alvo' pode ser deletada"
     return 0
 }
