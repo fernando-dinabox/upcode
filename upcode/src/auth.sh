@@ -6,16 +6,11 @@ check_token() {
     if [[ -f "$TOKEN_FILE" ]]; then
         local token=$(cat "$TOKEN_FILE" 2>/dev/null)
         if [[ -n "$token" && "$token" != "null" ]]; then
-            # Verificar se ainda temos as pastas do usuário E os dados do usuário
-            if [[ -f "$USER_FOLDERS_FILE" && -s "$USER_FOLDERS_FILE" ]] && [[ -f "$USER_INFO_FILE" && -s "$USER_INFO_FILE" ]]; then
-                load_user_info
-                return 0
-            fi
+            return 0
         fi
     fi
     return 1
 }
-
 do_login() {
     echo "🔐 Login necessário"
     echo "─────────────────"
@@ -32,7 +27,6 @@ do_login() {
     
     echo "🔄 Autenticando..."
     
-    # Fazer login usando a mesma estrutura do test_login.sh
     local response=$(curl -s -X POST "$AUTH_URL" \
         -d "action=login" \
         -d "username=$username" \
@@ -47,14 +41,12 @@ do_login() {
     local token=$(echo "$response" | grep -o '"token":[[:space:]]*"[^"]*"' | sed 's/.*"token":[[:space:]]*"\([^"]*\)".*/\1/')
     
     if [[ -n "$token" && "$token" != "null" ]]; then
-        # Salvar token
+        # Salvar APENAS o token
         echo "$token" > "$TOKEN_FILE"
         chmod 600 "$TOKEN_FILE"
         
-        # Extrair e salvar dados do usuário
+        # Extrair dados APENAS para variáveis (não salvar arquivos)
         extract_user_info "$response"
-        
-        # Extrair e salvar pastas do usuário
         extract_user_folders "$response"
         
         echo "✅ Login realizado com sucesso!"
@@ -63,15 +55,11 @@ do_login() {
         echo "🎭 Tipo: $USER_TYPE"
         local folder_count=$(echo "$response" | grep -o '"folders_count":[[:space:]]*[0-9]*' | sed 's/.*"folders_count":[[:space:]]*\([0-9]*\).*/\1/')
         echo "📁 Pastas disponíveis: $folder_count"
-        
-        # Carregar pastas para verificar
-        load_user_folders
         echo "🔍 Debug - Pastas carregadas: ${#user_folders[@]}"
         printf '   - "%s"\n' "${user_folders[@]}"
         
         sleep 1
         return 0
-
     else
         echo "❌ Falha na autenticação!"
         echo "🔍 Resposta do servidor:"
@@ -176,23 +164,11 @@ confirm_delete_option() {
     local upload_type="$1"
     local target_folder="$2"
     
-    # DEBUG: Mostrar dados antes da verificação
-    echo "🔍 DEBUG: USER_CAN_DELETE='$USER_CAN_DELETE'"
-    echo "🔍 DEBUG: USER_CANNOT_DELETE_FOLDERS_STR='$USER_CANNOT_DELETE_FOLDERS_STR'"
-    echo "🔍 DEBUG: Verificando pasta: '$target_folder'"
-    
-    # Usar a função SIMPLES que lê direto do arquivo
-    if ! pasta_pode_deletar "$target_folder"; then
-        echo
-        echo "🚫 EXCLUSÃO NÃO PERMITIDA"
-        echo "Upload será feito SEM exclusão"
-        return 1
-    fi
-    
-    # Mostrar opção de exclusão
+    # SEMPRE mostrar opção (PHP vai validar)
     echo
-    echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
-    echo "Você tem permissão para deletar arquivos no destino."
+    echo "🗑️ OPÇÃO DE EXCLUSÃO"
+    echo "Deseja deletar arquivos existentes antes do upload?"
+    echo "⚠️ Esta operação será validada pelo servidor."
     echo
     
     if confirm "🗑️ Deletar arquivos existentes no destino antes do upload?"; then
@@ -201,7 +177,6 @@ confirm_delete_option() {
         return 1  # Sem exclusão
     fi
 }
-
 
 
 load_user_info() {
@@ -258,38 +233,25 @@ extract_user_folders() {
     
     echo "🔍 Debug - Extraindo pastas..."
     
-    # Método mais robusto para extrair as pastas do JSON
-    # Primeiro, extrair todo o array folders
+    # Extrair todo o array folders
     local folders_section=$(echo "$response" | sed -n '/"folders":/,/\]/p')
     
     echo "🔍 Debug - Seção folders:"
     echo "$folders_section"
     
-    # Limpar arquivo anterior
-    > "$USER_FOLDERS_FILE"
-    
-    # Extrair cada linha que contém uma pasta (entre aspas)
+    # Carregar pastas APENAS no array (não salvar arquivo)
+    user_folders=()
     echo "$folders_section" | grep -o '"[^"]*"' | sed 's/"//g' | while read -r folder; do
-        # Filtrar apenas linhas que não são palavras-chave
         if [[ "$folder" != "folders" && -n "$folder" ]]; then
             # Decodificar caracteres unicode simples
             folder=$(echo "$folder" | sed 's/\\u00e1/á/g; s/\\u00e9/é/g; s/\\u00ed/í/g; s/\\u00f3/ó/g; s/\\u00fa/ú/g; s/\\u00e7/ç/g; s/\\u00e3/ã/g; s/\\u00f5/õ/g')
-            echo "$folder" >> "$USER_FOLDERS_FILE"
+            user_folders+=("$folder")
         fi
     done
     
-    # Carregar pastas no array
-    user_folders=()
-    if [[ -f "$USER_FOLDERS_FILE" ]]; then
-        while IFS= read -r folder; do
-            [[ -n "$folder" ]] && user_folders+=("$folder")
-        done < "$USER_FOLDERS_FILE"
-    fi
-    
-    echo "📁 Pastas extraídas e carregadas: ${#user_folders[@]}"
+    echo "📁 Pastas extraídas para sessão: ${#user_folders[@]}"
     printf '   📂 "%s"\n' "${user_folders[@]}"
 }
-
 load_user_folders() {
     user_folders=()
     if [[ -f "$USER_FOLDERS_FILE" ]]; then
@@ -315,14 +277,15 @@ renew_token() {
     fi
     
     if confirm "Fazer novo login?"; then
-        # Limpar dados antigos
-        rm -f "$TOKEN_FILE" "$USER_FOLDERS_FILE" "$USER_INFO_FILE"
+        # Limpar APENAS o token
+        rm -f "$TOKEN_FILE"
         
         # Limpar variáveis
         USER_DISPLAY_NAME=""
         USER_NICENAME=""
         USER_EMAIL=""
         USER_TYPE=""
+        USER_CAN_DELETE=""
         user_folders=()
         
         # Forçar novo login
@@ -330,37 +293,3 @@ renew_token() {
     fi
 }
 
-# Função que verifica se pode deletar
-pasta_pode_deletar() {
-    local pasta_alvo="$1"
-    
-    echo "🔍 DEBUG pasta_pode_deletar:"
-    echo "  Pasta testada: '$pasta_alvo'"
-    echo "  USER_CAN_DELETE: '$USER_CAN_DELETE'"
-    
-    # Se não tem permissão global
-    if [[ "$USER_CAN_DELETE" != "true" ]]; then
-        echo "  ❌ Sem permissão global de delete"
-        return 1
-    fi
-    
-    # Verificar arquivo de pastas restritas
-    if [[ -f "$RESTRICTED_FOLDERS_FILE" ]]; then
-        echo "  🔍 Verificando arquivo de restrições..."
-        
-        # Ler arquivo linha por linha
-        while IFS= read -r restricted_folder; do
-            echo "    Comparando '$pasta_alvo' com '$restricted_folder'"
-            if [[ "$pasta_alvo" == "$restricted_folder" ]]; then
-                echo "  ❌ Pasta '$pasta_alvo' está restrita (encontrada no arquivo)"
-                return 1
-            fi
-        done < "$RESTRICTED_FOLDERS_FILE"
-        
-        echo "  ✅ Pasta '$pasta_alvo' não está restrita"
-    else
-        echo "  ℹ️ Arquivo de restrições não existe - pode deletar"
-    fi
-    
-    return 0
-}
