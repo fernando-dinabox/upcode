@@ -212,6 +212,14 @@ show_upload_history() {
 upload_single_file() {
     local file="$1"
     
+    echo "🔍 DEBUG INICIAL upload_single_file:"
+    echo "  Arquivo: $file"
+    echo "  user_folders: ${#user_folders[@]} pastas"
+    echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
+    echo "  Token existe: $([[ -f "$TOKEN_FILE" ]] && echo "SIM" || echo "NÃO")"
+    printf '  Pastas: "%s"\n' "${user_folders[@]}"
+    echo
+    
     if [[ ! -f "$file" ]]; then
         echo "❌ Arquivo não encontrado: $file"
         pause
@@ -220,6 +228,12 @@ upload_single_file() {
     
     # Garantir login válido
     ensure_valid_login
+    
+    echo "🔍 DEBUG APÓS ensure_valid_login:"
+    echo "  user_folders: ${#user_folders[@]} pastas"
+    echo "  USER_DISPLAY_NAME: '$USER_DISPLAY_NAME'"
+    printf '  Pastas: "%s"\n' "${user_folders[@]}"
+    echo
     
     clear_screen
     echo "📤 Upload de Arquivo"
@@ -240,6 +254,20 @@ upload_single_file() {
         fi
     fi
     
+        # Debug - VERIFICAR se as pastas existem em memória
+    if [[ ${#user_folders[@]} -eq 0 ]]; then
+        echo "❌ PROBLEMA: Array user_folders está vazio!"
+        echo "🔄 Tentando recarregar..."
+        load_user_folders
+        if [[ ${#user_folders[@]} -eq 0 ]]; then
+            echo "❌ Ainda sem pastas - forçando novo login..."
+            ensure_valid_login
+        fi
+    else
+        echo "✅ Pastas em memória: ${#user_folders[@]}"
+    fi
+
+
     echo "🔍 Debug - Pastas para seleção:"
     printf '   📂 "%s"\n' "${user_folders[@]}"
     echo
