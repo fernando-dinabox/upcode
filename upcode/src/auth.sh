@@ -157,6 +157,7 @@ EOF
 confirm_delete_option() {
     local upload_type="$1"  # "arquivo" ou "pasta"
     local target_folder="$2"  # NOVO: pasta onde será feito o upload
+    [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 ]] && load_user_info "silent"
     
     # Verificar se tem permissão global
     if [[ "$USER_CAN_DELETE" != "true" ]]; then
@@ -229,6 +230,7 @@ load_user_info() {
 ensure_valid_login() {
     load_user_folders
     load_user_info
+    [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 && -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]] && IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
     
     if [[ ${#user_folders[@]} -eq 0 ]] || [[ -z "$USER_DISPLAY_NAME" ]]; then
         clear_screen
