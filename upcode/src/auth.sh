@@ -156,48 +156,27 @@ EOF
 }
 
 confirm_delete_option() {
-    local upload_type="$1"  # "arquivo" ou "pasta"
-    local target_folder="$2"  # NOVO: pasta onde será feito o upload
-    [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 ]] && load_user_info "silent"
-
-    # Verificar se tem permissão global
-    if [[ "$USER_CAN_DELETE" != "true" ]]; then
-        return 1  # Sem permissão global
+    local upload_type="$1"
+    local target_folder="$2"
+    
+    # Usar a função simples para verificar
+    if ! can_delete_in_folder "$target_folder"; then
+        echo
+        echo "🚫 EXCLUSÃO NÃO PERMITIDA"
+        echo "Upload será feito SEM exclusão"
+        return 1
     fi
     
-
-    echo "🔍 VERIFICANDO: pasta='$target_folder' contra ${#USER_CANNOT_DELETE_FOLDERS[@]} restrições"
-    # Verificar se a pasta atual está na lista de restrições
-    for restricted_folder in "${USER_CANNOT_DELETE_FOLDERS[@]}"; do
-        if [[ "$target_folder" == "$restricted_folder" ]]; then
-            echo
-            echo "🚫 EXCLUSÃO NÃO PERMITIDA"
-            echo "═══════════════════════════"
-            echo "Esta pasta está protegida contra exclusão prévia."
-            echo "Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
-            echo
-            return 1  # Não pode deletar nesta pasta
-        fi
-    done
-    
-    # Se chegou aqui, pode deletar - mostrar opção
+    # Mostrar opção de exclusão
     echo
     echo "🗑️ OPÇÃO DE EXCLUSÃO DISPONÍVEL"
-    echo "══════════════════════════════════"
-    echo "Você tem permissão para deletar arquivos no destino antes do upload."
-    echo
-    echo "⚠️ ATENÇÃO: Esta ação irá:"
-    echo "   • Deletar TODOS os arquivos na pasta de destino"
-    echo "   • Enviar os novos arquivos para pasta limpa"
-    echo "   • Ação IRREVERSÍVEL"
+    echo "Você tem permissão para deletar arquivos no destino."
     echo
     
     if confirm "🗑️ Deletar arquivos existentes no destino antes do upload?"; then
-        echo "✅ Upload será feito COM exclusão prévia"
-        return 0  # Retorna true para with_delete
+        return 0  # Com exclusão
     else
-        echo "ℹ️ Upload será feito SEM exclusão (arquivos serão adicionados/substituídos)"
-        return 1  # Retorna false para with_delete
+        return 1  # Sem exclusão
     fi
 }
 
@@ -327,4 +306,28 @@ renew_token() {
         # Forçar novo login
         do_login
     fi
+}
+
+
+# Função simples que verifica se pode deletar na pasta
+can_delete_in_folder() {
+    local target_folder="$1"
+    
+    # Se não tem permissão global, retorna falso
+    [[ "$USER_CAN_DELETE" != "true" ]] && return 1
+    
+    # Carregar dados atuais do usuário se necessário
+    [[ -z "$USER_DISPLAY_NAME" ]] && load_user_info "silent"
+    
+    # Recriar array se estiver vazio
+    if [[ ${#USER_CANNOT_DELETE_FOLDERS[@]} -eq 0 && -n "$USER_CANNOT_DELETE_FOLDERS_STR" ]]; then
+        IFS=' ' read -ra USER_CANNOT_DELETE_FOLDERS <<< "$USER_CANNOT_DELETE_FOLDERS_STR"
+    fi
+    
+    # Verificar se a pasta está na lista de restrições
+    for restricted in "${USER_CANNOT_DELETE_FOLDERS[@]}"; do
+        [[ "$target_folder" == "$restricted" ]] && return 1
+    done
+    
+    return 0  # Pode deletar
 }
